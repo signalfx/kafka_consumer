@@ -1,0 +1,23 @@
+[vars]
+  ignoreDirs = [".git", "_example", "vendor", "scripts", ".idea"]
+  testFlags = ["-covermode", "atomic", "-race", "-timeout", "15s", "-cpu", "4", "-parallel", "8"]
+  duplLimit = "300"
+  testCoverage = 0.0
+
+
+[metalinter]
+  [metalinter.vars]
+    args = ["-t", "--disable-all", "--vendor", "--min-confidence=.3", "--deadline=120s"]
+  [metalinter.ignored]
+    coverageignored = "ignored is unused"
+  [metalinter.enabled]
+    golint = true
+    gofmt = true
+    varcheck = true
+    maligned = true
+    gocyclo = true
+    vet = true
+    deadcode = true
+    unconvert = true
+    structcheck = true
+    ineffassign = true
