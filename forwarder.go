@@ -7,6 +7,7 @@ import (
 	"github.com/signalfx/golib/event"
 	"github.com/signalfx/golib/sfxclient"
 	"log"
+	"sort"
 	"sync"
 	"sync/atomic"
 )
@@ -36,7 +37,7 @@ type signalfxForwarder struct {
 func (s *signalfxForwarder) close() {
 	close(s.done)
 	s.wg.Wait()
-	log.Printf("Forwarder stats: datapoints %d events %d", atomic.LoadInt64(&s.stats.numD), atomic.LoadInt64(&s.stats.numE))
+	log.Printf("I! Forwarder stats: datapoints %d events %d", atomic.LoadInt64(&s.stats.numD), atomic.LoadInt64(&s.stats.numE))
 }
 
 func (s *signalfxForwarder) mainDrain() {
@@ -44,11 +45,7 @@ func (s *signalfxForwarder) mainDrain() {
 		select {
 		case dp := <-s.dps:
 			i := s.hash(dp)
-			select {
-			case s.chans[i] <- dp:
-			default:
-				log.Printf("E! dropping point %v because chan %d is full", *dp, i)
-			}
+			s.chans[i] <- dp // blocks
 
 		case <-s.done:
 			s.wg.Done()
@@ -73,7 +70,7 @@ func (s *signalfxForwarder) drainChannel(i int) {
 			s.fillAndSend(buf, i)
 			buf = buf[:0]
 		case e := <-s.evts:
-			atomic.AddInt64(&s.stats.numD, int64(1))
+			atomic.AddInt64(&s.stats.numD, int64(1)) // send events 1x1
 			if err := s.sinks[i].AddEvents(s.ctx, []*event.Event{e}); err != nil {
 				log.Printf("E! Error sending events to signalfx! %s", err.Error())
 			}
@@ -92,6 +89,7 @@ func (s *signalfxForwarder) hash(dp *datapoint.Datapoint) int {
 	return int(partition)
 
 }
+
 func (s *signalfxForwarder) fillAndSend(buf []*datapoint.Datapoint, i int) {
 	for {
 		select {
@@ -109,8 +107,16 @@ func (s *signalfxForwarder) fillAndSend(buf []*datapoint.Datapoint, i int) {
 	}
 }
 
+type byTimestamp []*datapoint.Datapoint
+
+func (c byTimestamp) Len() int           { return len(c) }
+func (c byTimestamp) Swap(i, j int)      { c[i], c[j] = c[j], c[i] }
+func (c byTimestamp) Less(i, j int) bool { return c[i].Timestamp.UnixNano() < c[j].Timestamp.UnixNano() }
+
 func (s *signalfxForwarder) sendToSignalFx(buf []*datapoint.Datapoint, i int) {
+	sort.Sort(byTimestamp(buf))
 	atomic.AddInt64(&s.stats.numD, int64(len(buf)))
+
 	if err := s.sinks[i].AddDatapoints(s.ctx, buf); err != nil {
 		log.Printf("E! Error sending datapoints to signalfx! %s", err.Error())
 	}

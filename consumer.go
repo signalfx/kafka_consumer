@@ -2,8 +2,8 @@ package main
 
 import (
 	"github.com/Shopify/sarama"
-	"github.com/bsm/sarama-cluster"
 	"github.com/influxdata/telegraf/plugins/parsers"
+	"github.com/signalfx/sarama-cluster"
 	"log"
 	"reflect"
 	"regexp"
@@ -72,7 +72,7 @@ func (c *consumer) refresh() {
 			log.Printf("I! Exiting consumer refresh")
 			return
 		case <-time.After(c.config.refreshInterval):
-			valid, err := getTopicList(c.config.kafkaBroker, c.regexed)
+			valid, err := c.config.getTopicList(c.regexed)
 			if err != nil {
 				log.Printf("E! Error fetching new topic list! %s", err.Error())
 				continue
@@ -115,7 +115,7 @@ func newConsumer(c *config, f *signalfxForwarder) (*consumer, error) {
 		return nil, err
 	}
 
-	valid, err := getTopicList(c.kafkaBroker, regexed)
+	valid, err := c.getTopicList(regexed)
 
 	if err != nil {
 		return nil, err
