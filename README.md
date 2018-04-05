@@ -8,6 +8,8 @@ Usage of ./kafka_consumer:
     	Channel size per drain to SignalFx (default 100000)
   -Debug
     	Turn debug on
+  -DebugServer string
+    	Put up a debug server at the address specified
   -KafkaBroker string
     	Kafka Broker to connect to (required to be set)
   -KafkaGroup string
