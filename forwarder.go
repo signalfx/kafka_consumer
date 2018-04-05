@@ -67,7 +67,7 @@ func (s *signalfxForwarder) drainChannel(i int) {
 		select {
 		case dp := <-c:
 			buf = append(buf, dp)
-			s.fillAndSend(buf, i)
+			s.fillAndSend(buf, c, i)
 			buf = buf[:0]
 		case e := <-s.evts:
 			atomic.AddInt64(&s.stats.numD, int64(1)) // send events 1x1
@@ -90,13 +90,14 @@ func (s *signalfxForwarder) hash(dp *datapoint.Datapoint) int {
 
 }
 
-func (s *signalfxForwarder) fillAndSend(buf []*datapoint.Datapoint, i int) {
+func (s *signalfxForwarder) fillAndSend(buf []*datapoint.Datapoint, c chan *datapoint.Datapoint, i int) {
 	for {
 		select {
-		case dp := <-s.chans[i]:
+		case dp := <-c:
 			buf = append(buf, dp)
 			if len(buf) >= s.config.batchSize {
 				s.sendToSignalFx(buf, i)
+				buf = buf[:0]
 			}
 		default:
 			if len(buf) > 0 {
