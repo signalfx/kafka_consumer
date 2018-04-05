@@ -259,12 +259,8 @@ func (s *telegrafToSfx) parse(metrics []telegraf.Metric, dChan chan *datapoint.D
 				// log event
 				log.Println("D! Output [signalfx] ", ev.String())
 
-				// Add event
-				select {
-				case eChan <- ev:
-				default:
-					log.Printf("E! Buffer full trying to send events to forwarder")
-				}
+				// Add event we want it to block
+				eChan <- ev
 			}
 		}
 	}
@@ -279,12 +275,8 @@ func doDp(metricName string, metricDims map[string]string, metricValue datapoint
 		timestamp)
 	// log metric
 	log.Println("D! Output [signalfx] ", dp.String())
-	// Add metric as a datapoint
-	select {
-	case dChan <- dp:
-	default:
-		log.Printf("E! Buffer full trying to send datapoints to forwarder")
-	}
+	// Add metric as a datapoint we want it to block
+	dChan <- dp
 }
 
 // isExcluded - checks whether a metric name was put on the exclude list

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"flag"
 	"github.com/Shopify/sarama"
-	"github.com/bsm/sarama-cluster"
 	"github.com/influxdata/telegraf/logger"
+	"github.com/signalfx/sarama-cluster"
 	"log"
 	"os"
 	"os/signal"
@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"time"
 )
+
+const version = "0.1.1"
 
 type config struct {
 	kafkaBroker     string
@@ -73,15 +75,7 @@ func getConfig() (*config, error) {
 func (c *config) getClusterConsumer(valid []string, offset string) (*cluster.Consumer, error) {
 	clusterConfig := cluster.NewConfig()
 	clusterConfig.Consumer.Return.Errors = true
-	switch strings.ToLower(offset) {
-	case "oldest", "":
-		clusterConfig.Consumer.Offsets.Initial = sarama.OffsetOldest
-	case "newest":
-		clusterConfig.Consumer.Offsets.Initial = sarama.OffsetNewest
-	default:
-		log.Printf("WARNING: Kafka offset specified invalid '%s', using 'newest'\n", c.offset)
-		clusterConfig.Consumer.Offsets.Initial = sarama.OffsetNewest
-	}
+	clusterConfig.Consumer.Offsets.Initial = c.getOffset()
 	clusterConsumer, err := cluster.NewConsumer(
 		[]string{c.kafkaBroker},
 		c.consumerGroup,
@@ -92,12 +86,28 @@ func (c *config) getClusterConsumer(valid []string, offset string) (*cluster.Con
 	return clusterConsumer, err
 }
 
-func getTopicList(kafkaBroker string, regexed *regexp.Regexp) ([]string, error) {
+func (c *config) getOffset() int64 {
+	switch strings.ToLower(c.offset) {
+	case "oldest", "":
+		return sarama.OffsetOldest
+	case "newest":
+	default:
+	}
+	return sarama.OffsetNewest
+}
+
+func (c *config) getTopicList(regexed *regexp.Regexp) ([]string, error) {
 	clientConfig := sarama.NewConfig()
-	client, err := sarama.NewClient([]string{kafkaBroker}, clientConfig)
+	clientConfig.Consumer.Offsets.Initial = c.getOffset()
+	client, err := sarama.NewClient([]string{c.kafkaBroker}, clientConfig)
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err := client.Close(); err != nil {
+			log.Printf("E! error closing client! %s", err.Error())
+		}
+	}()
 
 	topics, err := client.Topics()
 	if err != nil {
@@ -114,6 +124,7 @@ func getTopicList(kafkaBroker string, regexed *regexp.Regexp) ([]string, error) 
 }
 
 func main() {
+	log.Printf("I! Running version %s", version)
 	config, err := getConfig()
 	if err != nil {
 		log.Fatalf("E! Unable to initialize config: %s", err.Error())
@@ -128,7 +139,7 @@ func main() {
 	done := make(chan struct{})
 	logger.SetupLogging(c.config.debug, false, c.config.logFile)
 	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigs, syscall.SIGTERM)
 	go func() {
 		sig := <-sigs
 		log.Printf("I! Caught the %s signal, draining consumer", sig)
