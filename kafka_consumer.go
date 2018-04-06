@@ -5,8 +5,11 @@ import (
 	"flag"
 	"github.com/Shopify/sarama"
 	"github.com/influxdata/telegraf/logger"
+	"github.com/signalfx/golib/datapoint"
+	"github.com/signalfx/golib/httpdebug"
 	"github.com/signalfx/sarama-cluster"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"regexp"
@@ -16,7 +19,7 @@ import (
 	"time"
 )
 
-const version = "0.1.2"
+const version = "0.1.3"
 
 type config struct {
 	kafkaBroker     string
@@ -26,12 +29,14 @@ type config struct {
 	sfxToken        string
 	offset          string
 	logFile         string
+	debugServer     string
 	refreshInterval time.Duration
 	numDrainThreads int
 	channelSize     int
 	batchSize       int
 	useHashing      bool
 	debug           bool
+	sendMetrics     bool
 }
 
 var errorRequiredOptions = errors.New("options KafkaBroker and SfxToken are required")
@@ -50,6 +55,8 @@ func getConfig() (*config, error) {
 	channelSize := flag.Int("ChannelSize", 100000, "Channel size per drain to SignalFx")
 	batchSize := flag.Int("BatchSize", 5000, "Max batch size to send to SignalFx")
 	useHashing := flag.Bool("UseHashing", true, "Has the datapoint to a particular channel")
+	debugServer := flag.String("DebugServer", "", "Put up a debug server at the address specified")
+	sendMetrics := flag.Bool("SendMetrics", true, "Self report metrics")
 	flag.Parse()
 	c := config{
 		kafkaBroker:     *kafkaBroker,
@@ -65,6 +72,8 @@ func getConfig() (*config, error) {
 		channelSize:     *channelSize,
 		batchSize:       *batchSize,
 		useHashing:      *useHashing,
+		debugServer:     *debugServer,
+		sendMetrics:     *sendMetrics,
 	}
 	if c.kafkaBroker == "" || c.sfxToken == "" {
 		return nil, errorRequiredOptions
@@ -123,13 +132,15 @@ func (c *config) getTopicList(regexed *regexp.Regexp) ([]string, error) {
 	return valid, nil
 }
 
-func main() {
-	log.Printf("I! Running version %s", version)
-	config, err := getConfig()
-	if err != nil {
-		log.Fatalf("E! Unable to initialize config: %s", err.Error())
-	}
+type kafkaConsumer struct {
+	done                chan struct{}
+	f                   *signalfxForwarder
+	c                   *consumer
+	debugServer         *httpdebug.Server
+	debugServerListener net.Listener
+}
 
+func start(config *config) *kafkaConsumer {
 	f := newSignalFxForwarder(config)
 
 	c, err := newConsumer(config, f)
@@ -138,17 +149,76 @@ func main() {
 	}
 	done := make(chan struct{})
 	logger.SetupLogging(c.config.debug, false, c.config.logFile)
+	k := &kafkaConsumer{
+		f:    f,
+		c:    c,
+		done: done,
+	}
+	if config.debugServer != "" {
+		listener, err := net.Listen("tcp", config.debugServer)
+		if err != nil {
+			log.Fatalf("E! cannot setup debug server %s", err.Error())
+		}
+		k.debugServerListener = listener
+		k.debugServer = httpdebug.New(&httpdebug.Config{
+			Logger:        nil,
+			ExplorableObj: k,
+		})
+		go func() {
+			err := k.debugServer.Serve(listener)
+			if err != nil {
+				log.Printf("Finished listening on debug server %s", err.Error())
+			}
+		}()
+	}
+	if config.sendMetrics {
+		go k.metrics()
+	}
+	return k
+}
+
+func (k *kafkaConsumer) metrics() {
+	for {
+		select {
+		case <-k.done:
+			return
+		case <-time.After(time.Second * 10):
+			dps := k.Datapoints()
+			for _, d := range dps {
+				k.f.dps <- d
+			}
+		}
+	}
+}
+
+func (k *kafkaConsumer) wait() {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGTERM)
 	go func() {
 		sig := <-sigs
 		log.Printf("I! Caught the %s signal, draining consumer", sig)
-		c.close()
+		k.c.close()
 		log.Printf("I! Done draining consumer, now draining forwarder")
-		f.close()
-		close(done)
+		k.f.close()
+		close(k.done)
 	}()
 	log.Println("I! Awaiting metrics")
-	<-done
+	<-k.done
 	log.Println("I! Exiting")
+}
+
+func (k *kafkaConsumer) Datapoints() []*datapoint.Datapoint {
+	dps := k.f.Datapoints()
+	dps = append(dps, k.c.Datapoints()...)
+	return dps
+}
+
+func main() {
+	log.Printf("I! Running version %s", version)
+	config, err := getConfig()
+	if err != nil {
+		log.Fatalf("E! Unable to initialize config: %s", err.Error())
+	}
+	k := start(config)
+	k.wait()
 }
