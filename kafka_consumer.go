@@ -5,6 +5,7 @@ import (
 	"flag"
 	"github.com/Shopify/sarama"
 	"github.com/influxdata/telegraf/logger"
+	"github.com/influxdata/telegraf/plugins/parsers"
 	"github.com/signalfx/golib/datapoint"
 	"github.com/signalfx/golib/httpdebug"
 	"github.com/signalfx/sarama-cluster"
@@ -15,33 +16,55 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
 
-const version = "0.1.3"
+const version = "0.1.4"
+
+type clusterConsumer interface {
+	MarkOffset(*sarama.ConsumerMessage, string)
+	Close() error
+	Messages() <-chan *sarama.ConsumerMessage
+	Errors() <-chan error
+}
+
+type saramaClient interface {
+	Close() error
+	Topics() ([]string, error)
+}
 
 type config struct {
-	kafkaBroker     string
-	consumerGroup   string
-	topicPattern    string
-	sfxEndpoint     string
-	sfxToken        string
-	offset          string
-	logFile         string
-	debugServer     string
-	refreshInterval time.Duration
-	numDrainThreads int
-	channelSize     int
-	batchSize       int
-	useHashing      bool
-	debug           bool
-	sendMetrics     bool
+	kafkaBroker           string
+	consumerGroup         string
+	topicPattern          string
+	sfxEndpoint           string
+	sfxToken              string
+	offset                string
+	logFile               string
+	debugServer           string
+	refreshInterval       time.Duration
+	numDrainThreads       int
+	channelSize           int
+	batchSize             int
+	useHashing            bool
+	debug                 bool
+	sendMetrics           bool
+	metricInterval        time.Duration
+	newClientConstructor  func(addrs []string, conf *sarama.Config) (saramaClient, error)
+	newClusterConstructor func(addrs []string, groupID string, topics []string, config *cluster.Config) (clusterConsumer, error)
+	parserConstructor     func() (parsers.Parser, error)
 }
 
 var errorRequiredOptions = errors.New("options KafkaBroker and SfxToken are required")
 
+var instanceConfig *config
+
 func getConfig() (*config, error) {
+	if instanceConfig != nil {
+		return instanceConfig, nil
+	}
 	kafkaBroker := flag.String("KafkaBroker", "", "Kafka Broker to connect to (required to be set)")
 	consumerGroup := flag.String("KafkaGroup", "default_kafka_consumer_group", "Kafka Consumer Group to be part")
 	topicPattern := flag.String("KafkaTopicPattern", "", "Kafka Topic Pattern to listen on")
@@ -58,7 +81,7 @@ func getConfig() (*config, error) {
 	debugServer := flag.String("DebugServer", "", "Put up a debug server at the address specified")
 	sendMetrics := flag.Bool("SendMetrics", true, "Self report metrics")
 	flag.Parse()
-	c := config{
+	c := &config{
 		kafkaBroker:     *kafkaBroker,
 		consumerGroup:   *consumerGroup,
 		topicPattern:    *topicPattern,
@@ -74,18 +97,31 @@ func getConfig() (*config, error) {
 		useHashing:      *useHashing,
 		debugServer:     *debugServer,
 		sendMetrics:     *sendMetrics,
+		metricInterval:  time.Second * 10,
 	}
-	if c.kafkaBroker == "" || c.sfxToken == "" {
-		return nil, errorRequiredOptions
-	}
-	return &c, nil
+	instanceConfig = c
+	return c, c.postConfig()
 }
 
-func (c *config) getClusterConsumer(valid []string, offset string) (*cluster.Consumer, error) {
+func (c *config) postConfig() error {
+	if c.kafkaBroker == "" || c.sfxToken == "" {
+		return errorRequiredOptions
+	}
+	c.newClientConstructor = func(addrs []string, conf *sarama.Config) (saramaClient, error) {
+		return sarama.NewClient(addrs, conf)
+	}
+	c.parserConstructor = parsers.NewInfluxParser
+	c.newClusterConstructor = func(addrs []string, groupID string, topics []string, config *cluster.Config) (clusterConsumer, error) {
+		return cluster.NewConsumer(addrs, groupID, topics, config)
+	}
+	return nil
+}
+
+func (c *config) getClusterConsumer(valid []string, offset string) (clusterConsumer, error) {
 	clusterConfig := cluster.NewConfig()
 	clusterConfig.Consumer.Return.Errors = true
 	clusterConfig.Consumer.Offsets.Initial = c.getOffset()
-	clusterConsumer, err := cluster.NewConsumer(
+	clusterConsumer, err := c.newClusterConstructor(
 		[]string{c.kafkaBroker},
 		c.consumerGroup,
 		valid,
@@ -105,31 +141,27 @@ func (c *config) getOffset() int64 {
 	return sarama.OffsetNewest
 }
 
-func (c *config) getTopicList(regexed *regexp.Regexp) ([]string, error) {
+func (c *config) getTopicList(regexed *regexp.Regexp) (valid []string, err error) {
 	clientConfig := sarama.NewConfig()
 	clientConfig.Consumer.Offsets.Initial = c.getOffset()
-	client, err := sarama.NewClient([]string{c.kafkaBroker}, clientConfig)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := client.Close(); err != nil {
-			log.Printf("E! error closing client! %s", err.Error())
-		}
-	}()
+	client, err := c.newClientConstructor([]string{c.kafkaBroker}, clientConfig)
+	if err == nil {
+		defer func() {
+			logIfErr("E! error closing client! %s", client.Close())
+		}()
 
-	topics, err := client.Topics()
-	if err != nil {
-		return nil, err
-	}
-	valid := make([]string, 0)
-	for _, k := range topics {
-		if regexed.Match([]byte(k)) {
-			valid = append(valid, k)
+		topics, err := client.Topics()
+		if err == nil {
+			valid = make([]string, 0)
+			for _, k := range topics {
+				if regexed.Match([]byte(k)) {
+					valid = append(valid, k)
+				}
+			}
+			sort.Strings(valid)
 		}
 	}
-	sort.Strings(valid)
-	return valid, nil
+	return
 }
 
 type kafkaConsumer struct {
@@ -138,51 +170,50 @@ type kafkaConsumer struct {
 	c                   *consumer
 	debugServer         *httpdebug.Server
 	debugServerListener net.Listener
+	sigs                chan os.Signal
 }
 
-func start(config *config) *kafkaConsumer {
+func start(config *config) (k *kafkaConsumer, err error) {
 	f := newSignalFxForwarder(config)
 
-	c, err := newConsumer(config, f)
-	if err != nil {
-		log.Fatalf("E! Unable to create consumer: %s", err.Error())
-	}
-	done := make(chan struct{})
-	logger.SetupLogging(c.config.debug, false, c.config.logFile)
-	k := &kafkaConsumer{
-		f:    f,
-		c:    c,
-		done: done,
-	}
-	if config.debugServer != "" {
-		listener, err := net.Listen("tcp", config.debugServer)
-		if err != nil {
-			log.Fatalf("E! cannot setup debug server %s", err.Error())
+	var c *consumer
+	c, err = newConsumer(config, f.dps, f.evts)
+	if err == nil {
+		done := make(chan struct{})
+		logger.SetupLogging(c.config.debug, false, c.config.logFile)
+		k = &kafkaConsumer{
+			f:    f,
+			c:    c,
+			done: done,
+			sigs: make(chan os.Signal, 1),
 		}
-		k.debugServerListener = listener
-		k.debugServer = httpdebug.New(&httpdebug.Config{
-			Logger:        nil,
-			ExplorableObj: k,
-		})
-		go func() {
-			err := k.debugServer.Serve(listener)
-			if err != nil {
-				log.Printf("Finished listening on debug server %s", err.Error())
+		if config.debugServer != "" {
+			listener, err := net.Listen("tcp", config.debugServer)
+			if err == nil {
+				k.debugServerListener = listener
+				k.debugServer = httpdebug.New(&httpdebug.Config{
+					Logger:        nil,
+					ExplorableObj: k,
+				})
+				go func() {
+					logIfErr("Finished listening on debug server %s", k.debugServer.Serve(listener))
+				}()
 			}
-		}()
+			logIfErr("E! cannot setup debug server %s", err)
+		}
+		if config.sendMetrics {
+			go k.metrics(config.metricInterval)
+		}
 	}
-	if config.sendMetrics {
-		go k.metrics()
-	}
-	return k
+	return k, err
 }
 
-func (k *kafkaConsumer) metrics() {
+func (k *kafkaConsumer) metrics(t time.Duration) {
 	for {
 		select {
 		case <-k.done:
 			return
-		case <-time.After(time.Second * 10):
+		case <-time.After(t):
 			dps := k.Datapoints()
 			for _, d := range dps {
 				k.f.dps <- d
@@ -192,10 +223,9 @@ func (k *kafkaConsumer) metrics() {
 }
 
 func (k *kafkaConsumer) wait() {
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGTERM)
+	signal.Notify(k.sigs, syscall.SIGTERM)
 	go func() {
-		sig := <-sigs
+		sig := <-k.sigs
 		log.Printf("I! Caught the %s signal, draining consumer", sig)
 		k.c.close()
 		log.Printf("I! Done draining consumer, now draining forwarder")
@@ -213,12 +243,21 @@ func (k *kafkaConsumer) Datapoints() []*datapoint.Datapoint {
 	return dps
 }
 
+var mainInstance *kafkaConsumer
+var setup int64
+
+func logIfErr(format string, err error) {
+	if err != nil {
+		log.Printf(format, err.Error())
+	}
+}
+
 func main() {
 	log.Printf("I! Running version %s", version)
 	config, err := getConfig()
-	if err != nil {
-		log.Fatalf("E! Unable to initialize config: %s", err.Error())
-	}
-	k := start(config)
-	k.wait()
+	logIfErr("E! Unable to initialize config: %s", err)
+	mainInstance, err = start(config)
+	logIfErr("E! Unable to create instance config: %s", err)
+	atomic.StoreInt64(&setup, 1)
+	mainInstance.wait()
 }

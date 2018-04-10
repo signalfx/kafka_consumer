@@ -1,26 +1,105 @@
-package main
+package signalfx
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"reflect"
 
 	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/plugins/outputs"
 	"github.com/signalfx/golib/datapoint"
 	"github.com/signalfx/golib/event"
-	"time"
+	"github.com/signalfx/golib/sfxclient"
+	"sync"
 )
 
-type telegrafToSfx struct {
-	Exclude []string
-	Include []string
+/*SignalFx plugin context*/
+type SignalFx struct {
+	APIToken           string
+	BatchSize          int
+	ChannelSize        int
+	DatapointIngestURL string
+	EventIngestURL     string
+	Exclude            []string
+	Include            []string
+	ctx                context.Context
+	client             *sfxclient.HTTPSink
+	dps                chan *datapoint.Datapoint
+	evts               chan *event.Event
+	done               chan struct{}
+	wg                 sync.WaitGroup
 }
 
-func newTelegraf() *telegrafToSfx {
-	return &telegrafToSfx{
-		Exclude: []string{""},
-		Include: []string{""},
+var sampleConfig = `
+    ## SignalFx API Token
+    APIToken = "my-secret-key" # required.
+
+    ## BatchSize
+    BatchSize = 1000
+
+    ## Ingest URL
+    DatapointIngestURL = "https://ingest.signalfx.com/v2/datapoint"
+    EventIngestURL = "https://ingest.signalfx.com/v2/event"
+    
+    ## Exclude metrics by metric name
+    Exclude = ["plugin.metric_name", ""]
+
+    ## Events or String typed metrics are omitted by default,
+    ## with the exception of host property events which are emitted by 
+    ## the SignalFx Metadata Plugin.  If you require a string typed metric
+    ## you must specify the metric name in the following list
+    Include = ["plugin.metric_name", ""]
+`
+
+// NewSignalFx - returns a new context for the SignalFx output plugin
+func NewSignalFx() *SignalFx {
+	return &SignalFx{
+		APIToken:           "",
+		BatchSize:          1000,
+		ChannelSize:        100000,
+		DatapointIngestURL: "https://ingest.signalfx.com/v2/datapoint",
+		EventIngestURL:     "https://ingest.signalfx.com/v2/event",
+		Exclude:            []string{""},
+		Include:            []string{""},
+		done:               make(chan struct{}),
 	}
+}
+
+/*Description returns a description for the plugin*/
+func (s *SignalFx) Description() string {
+	return "Send metrics to SignalFx"
+}
+
+/*SampleConfig returns the sample configuration for the plugin*/
+func (s *SignalFx) SampleConfig() string {
+	return sampleConfig
+}
+
+/*Connect establishes a connection to SignalFx*/
+func (s *SignalFx) Connect() error {
+	// Make a connection to the URL here
+	s.client = sfxclient.NewHTTPSink()
+	s.client.AuthToken = s.APIToken
+	s.client.DatapointEndpoint = s.DatapointIngestURL
+	s.client.EventEndpoint = s.EventIngestURL
+	s.ctx = context.Background()
+	s.dps = make(chan *datapoint.Datapoint, s.ChannelSize)
+	s.evts = make(chan *event.Event, s.ChannelSize)
+	go s.emitDatapoints()
+	go s.emitEvents()
+	s.wg.Add(2)
+	log.Printf("I! Output [signalfx] batch size is %d\n", s.BatchSize)
+	return nil
+}
+
+/*Close closes the connection to SignalFx*/
+func (s *SignalFx) Close() error {
+	s.ctx.Done()
+	s.client = nil
+	close(s.done)
+	s.wg.Wait()
+	return nil
 }
 
 /*Determine and assign a datapoint metric type based on telegraf metric type*/
@@ -193,7 +272,7 @@ func modifyDimensions(name string, metricTypeString string, dims map[string]stri
 				delete(dims, "property")
 			} else {
 				// This is a malformed metadata event
-				err = fmt.Errorf("[signalfx] objects.host-metadata object doesn't have a property")
+				err = fmt.Errorf("E! Output [signalfx] objects.host-metadata object doesn't have a property")
 			}
 			// remove the sf_metric dimension
 			delete(dims, "sf_metric")
@@ -202,7 +281,7 @@ func modifyDimensions(name string, metricTypeString string, dims map[string]stri
 	return err
 }
 
-func (s *telegrafToSfx) shouldSkipMetric(metricName string, metricTypeString string, metricDims map[string]string, metricProps map[string]interface{}) bool {
+func (s *SignalFx) shouldSkipMetric(metricName string, metricTypeString string, metricDims map[string]string, metricProps map[string]interface{}) bool {
 	// Check if the metric is explicitly excluded
 	if excluded := s.isExcluded(metricName); excluded {
 		log.Println("D! Outputs [signalfx] excluding the following metric: ", metricName)
@@ -217,8 +296,83 @@ func (s *telegrafToSfx) shouldSkipMetric(metricName string, metricTypeString str
 	return false
 }
 
-func (s *telegrafToSfx) parse(metrics []telegraf.Metric, dChan chan *datapoint.Datapoint, eChan chan *event.Event) error {
-	var err error
+func (s *SignalFx) emitDatapoints() {
+	var buf []*datapoint.Datapoint
+	for {
+		select {
+		case <-s.done:
+			return
+		case dp := <-s.dps:
+			buf = append(buf, dp)
+			s.fillAndSendDatapoints(buf)
+			buf = buf[:0]
+		}
+	}
+}
+
+func (s *SignalFx) fillAndSendDatapoints(buf []*datapoint.Datapoint) {
+	for {
+		select {
+		case <-s.done:
+			return
+		case dp := <-s.dps:
+			buf = append(buf, dp)
+			if len(buf) >= s.BatchSize {
+				if err := s.client.AddDatapoints(s.ctx, buf); err != nil {
+					log.Println("E! Output [signalfx] ", err)
+				}
+				buf = buf[:0]
+			}
+		default:
+			if len(buf) > 0 {
+				if err := s.client.AddDatapoints(s.ctx, buf); err != nil {
+					log.Println("E! Output [signalfx] ", err)
+				}
+			}
+			return
+		}
+	}
+}
+
+func (s *SignalFx) emitEvents() {
+	var buf []*event.Event
+	for {
+		select {
+		case <-s.done:
+			return
+		case e := <-s.evts:
+			buf = append(buf, e)
+			s.fillAndSendEvents(buf)
+			buf = buf[:0]
+		}
+	}
+}
+
+func (s *SignalFx) fillAndSendEvents(buf []*event.Event) {
+	for {
+		select {
+		case <-s.done:
+			return
+		case e := <-s.evts:
+			buf = append(buf, e)
+			if len(buf) >= s.BatchSize {
+				if err := s.client.AddEvents(s.ctx, buf); err != nil {
+					log.Println("E! Output [signalfx] ", err)
+				}
+				buf = buf[:0]
+			}
+		default:
+			if len(buf) > 0 {
+				if err := s.client.AddEvents(s.ctx, buf); err != nil {
+					log.Println("E! Output [signalfx] ", err)
+				}
+			}
+			return
+		}
+	}
+}
+
+func (s *SignalFx) GetObjects(metrics []telegraf.Metric, dps chan *datapoint.Datapoint, evts chan *event.Event) {
 	for _, metric := range metrics {
 		var timestamp = metric.Time()
 		var metricType datapoint.MetricType
@@ -227,7 +381,6 @@ func (s *telegrafToSfx) parse(metrics []telegraf.Metric, dChan chan *datapoint.D
 		metricType, metricTypeString = parseMetricType(metric)
 
 		for field := range metric.Fields() {
-			var metricValue datapoint.Value
 			var metricName string
 			var metricProps = make(map[string]interface{})
 			var metricDims = metric.Tags()
@@ -240,8 +393,18 @@ func (s *telegrafToSfx) parse(metrics []telegraf.Metric, dChan chan *datapoint.D
 			}
 
 			// Get the metric value as a datapoint value
-			if metricValue, err = getMetricValue(metric, field); err == nil {
-				doDp(metricName, metricDims, metricValue, metricType, timestamp, dChan)
+			if metricValue, err := getMetricValue(metric, field); err == nil {
+				var dp = datapoint.New(metricName,
+					metricDims,
+					metricValue.(datapoint.Value),
+					metricType,
+					timestamp)
+
+				// log metric
+				log.Println("D! Output [signalfx] ", dp.String())
+
+				// Add metric as a datapoint
+				dps <- dp
 			} else {
 				// Skip if it's not an sfx metric and it's not included
 				if _, isSFX := metric.Tags()["sf_metric"]; !isSFX && !s.isIncluded(metricName) {
@@ -259,28 +422,22 @@ func (s *telegrafToSfx) parse(metrics []telegraf.Metric, dChan chan *datapoint.D
 				// log event
 				log.Println("D! Output [signalfx] ", ev.String())
 
-				// Add event we want it to block
-				eChan <- ev
+				// Add event
+				evts <- ev
 			}
 		}
 	}
+	return
+}
+
+/*Write call back for writing metrics*/
+func (s *SignalFx) Write(metrics []telegraf.Metric) error {
+	s.GetObjects(metrics, s.dps, s.evts)
 	return nil
 }
 
-func doDp(metricName string, metricDims map[string]string, metricValue datapoint.Value, metricType datapoint.MetricType, timestamp time.Time, dChan chan *datapoint.Datapoint) {
-	var dp = datapoint.New(metricName,
-		metricDims,
-		metricValue.(datapoint.Value),
-		metricType,
-		timestamp)
-	// log metric
-	log.Println("D! Output [signalfx] ", dp.String())
-	// Add metric as a datapoint we want it to block
-	dChan <- dp
-}
-
 // isExcluded - checks whether a metric name was put on the exclude list
-func (s *telegrafToSfx) isExcluded(name string) bool {
+func (s *SignalFx) isExcluded(name string) bool {
 	for _, exclude := range s.Exclude {
 		if name == exclude {
 			return true
@@ -290,11 +447,18 @@ func (s *telegrafToSfx) isExcluded(name string) bool {
 }
 
 // isIncluded - checks whether a metric name was put on the include list
-func (s *telegrafToSfx) isIncluded(name string) bool {
+func (s *SignalFx) isIncluded(name string) bool {
 	for _, include := range s.Include {
 		if name == include {
 			return true
 		}
 	}
 	return false
+}
+
+/*init initializes the plugin context*/
+func init() {
+	outputs.Add("signalfx", func() telegraf.Output {
+		return NewSignalFx()
+	})
 }

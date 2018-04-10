@@ -36,6 +36,7 @@ type signalfxForwarder struct {
 		dPBatchSizes *sfxclient.RollingBucket
 		dPSendTime   *sfxclient.RollingBucket
 		numDpErrors  int64
+		numEErrors   int64
 	}
 }
 
@@ -77,6 +78,7 @@ func (s *signalfxForwarder) drainChannel(i int) {
 			atomic.AddInt64(&s.stats.numE, int64(1)) // send events 1x1
 			if err := s.sinks[i].AddEvents(s.ctx, []*event.Event{e}); err != nil {
 				log.Printf("E! Error sending events to signalfx! %s", err.Error())
+				atomic.AddInt64(&s.stats.numEErrors, 1)
 			}
 		case <-s.done:
 			s.wg.Done()

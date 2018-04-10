@@ -2,7 +2,7 @@
   ignoreDirs = [".git", "_example", "vendor", "scripts", ".idea"]
   testFlags = ["-covermode", "atomic", "-race", "-timeout", "15s", "-cpu", "4", "-parallel", "8"]
   duplLimit = "300"
-  testCoverage = 0.0
+  testCoverage = 100.0
 
 
 [metalinter]
