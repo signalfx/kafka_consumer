@@ -88,6 +88,8 @@ github.com/signalfx/golib v2.4.0+incompatible h1:VtCORl7AdhkCIy3rS0m3WLpcNmqGcWo
 github.com/signalfx/golib v2.4.0+incompatible/go.mod h1:nWYefOwlUKWm/SpN/LgVSBnyH1T9NpT1ANlmgRIi1Cs=
 github.com/signalfx/sarama-cluster v0.0.0-20180405021658-b7a32abeb422 h1:HLf8Us5A+52I75o1ggdDf41zYAtRwcSk7Q9L4pJz+kE=
 github.com/signalfx/sarama-cluster v0.0.0-20180405021658-b7a32abeb422/go.mod h1:eKZo8AQYhwAYC8t2o/LyNT2VQXW6OO1IDuVxTqfvDa8=
+github.com/signalfx/sarama-cluster v2.1.13+incompatible h1:7xuB/BFbkZRWgCO0PdTBdTejda+YqJTEH0mTgpQutoI=
+github.com/signalfx/sarama-cluster v2.1.13+incompatible/go.mod h1:eKZo8AQYhwAYC8t2o/LyNT2VQXW6OO1IDuVxTqfvDa8=
 github.com/signalfx/telegraf v0.0.0-20180412155503-b679d828a925 h1:2ic+625MOQyj4EwLt9mNiUBQFeslC9ryAhpYVJBJ1dM=
 github.com/signalfx/telegraf v0.0.0-20180412155503-b679d828a925/go.mod h1:1gnMOcwGO3lAxfoMq28M8gjooF2MqVwquPVEvgZ1its=
 github.com/sirupsen/logrus v0.0.0-20160416082137-081307d9bc13 h1:9U434i83gldI7ubGpHXLUxokDhHi1s/Aob7EcSwfRyE=

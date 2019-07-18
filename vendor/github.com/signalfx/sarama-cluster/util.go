@@ -22,10 +22,8 @@ type offsetInfo struct {
 	Metadata string
 }
 
-// if we're not asking for the newest and known offset is positive, return that
-// if we are asking for the newest, known offset is irrelevant
 func (i offsetInfo) NextOffset(fallback int64) int64 {
-	if fallback == -2 && i.Offset > -1 {
+	if i.Offset > -1 {
 		return i.Offset
 	}
 	return fallback
