@@ -19,6 +19,10 @@ github.com/eapache/go-resiliency/breaker
 github.com/eapache/go-xerial-snappy
 # github.com/eapache/queue v1.1.0
 github.com/eapache/queue
+# github.com/go-logfmt/logfmt v0.4.0
+github.com/go-logfmt/logfmt
+# github.com/go-stack/stack v1.8.0
+github.com/go-stack/stack
 # github.com/golang/protobuf v0.0.0-20171021043952-1643683e1b54
 github.com/golang/protobuf/proto
 # github.com/golang/snappy v0.0.1
@@ -50,6 +54,14 @@ github.com/jcmturner/gofork/x/crypto/pbkdf2
 github.com/jtolds/gls
 # github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515
 github.com/kr/logfmt
+# github.com/mailru/easyjson v0.0.0-20190626092158-b2ccc519800e
+github.com/mailru/easyjson
+github.com/mailru/easyjson/jlexer
+github.com/mailru/easyjson/jwriter
+github.com/mailru/easyjson/buffer
+# github.com/opentracing/opentracing-go v1.1.0
+github.com/opentracing/opentracing-go
+github.com/opentracing/opentracing-go/log
 # github.com/pierrec/lz4 v0.0.0-20190327172049-315a67e90e41
 github.com/pierrec/lz4
 github.com/pierrec/lz4/internal/xxh32
@@ -63,7 +75,7 @@ github.com/rcrowley/go-metrics
 github.com/signalfx/com_signalfx_metrics_protobuf
 # github.com/signalfx/gohistogram v0.0.0-20160107210732-1ccfd2ff5083
 github.com/signalfx/gohistogram
-# github.com/signalfx/golib v1.1.3
+# github.com/signalfx/golib v2.4.0+incompatible
 github.com/signalfx/golib/datapoint
 github.com/signalfx/golib/datapoint/dpsink
 github.com/signalfx/golib/event
@@ -71,10 +83,13 @@ github.com/signalfx/golib/httpdebug
 github.com/signalfx/golib/sfxclient
 github.com/signalfx/golib/errors
 github.com/signalfx/golib/log
+github.com/signalfx/golib/sfxclient/spanfilter
+github.com/signalfx/golib/trace
 github.com/signalfx/golib/explorable
 github.com/signalfx/golib/expvar2
 github.com/signalfx/golib/pointer
 github.com/signalfx/golib/timekeeper
+github.com/signalfx/golib/trace/format
 github.com/signalfx/golib/datapoint/dptest
 github.com/signalfx/golib/eventcounter
 github.com/signalfx/golib/logkey
@@ -152,7 +167,3 @@ gopkg.in/jcmturner/gokrb5.v7/crypto/rfc8009
 # gopkg.in/jcmturner/rpc.v1 v1.1.0
 gopkg.in/jcmturner/rpc.v1/mstypes
 gopkg.in/jcmturner/rpc.v1/ndr
-# gopkg.in/logfmt.v0 v0.1.0
-gopkg.in/logfmt.v0
-# gopkg.in/stack.v1 v1.5.0
-gopkg.in/stack.v1
