@@ -2,7 +2,9 @@
 collectd.org/api
 collectd.org/network
 collectd.org/cdtime
-# github.com/Shopify/sarama v0.0.0-20180402174117-8da9fa72b866
+# github.com/DataDog/zstd v1.4.0
+github.com/DataDog/zstd
+# github.com/Shopify/sarama v1.23.0
 github.com/Shopify/sarama
 # github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc
 github.com/alecthomas/template
@@ -11,18 +13,20 @@ github.com/alecthomas/template/parse
 github.com/alecthomas/units
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
-# github.com/eapache/go-resiliency v1.1.0
+# github.com/eapache/go-resiliency v1.2.0
 github.com/eapache/go-resiliency/breaker
-# github.com/eapache/go-xerial-snappy v0.0.0-20160609142408-bb955e01b934
+# github.com/eapache/go-xerial-snappy v0.0.0-20180814174437-776d5712da21
 github.com/eapache/go-xerial-snappy
-# github.com/eapache/queue v0.0.0-20180227141424-093482f3f8ce
+# github.com/eapache/queue v1.1.0
 github.com/eapache/queue
 # github.com/golang/protobuf v0.0.0-20171021043952-1643683e1b54
 github.com/golang/protobuf/proto
-# github.com/golang/snappy v0.0.0-20170215233205-553a64147049
+# github.com/golang/snappy v0.0.1
 github.com/golang/snappy
 # github.com/gopherjs/gopherjs v0.0.0-20160415133513-19e100e96524
 github.com/gopherjs/gopherjs/js
+# github.com/hashicorp/go-uuid v1.0.1
+github.com/hashicorp/go-uuid
 # github.com/influxdata/telegraf v0.0.0-20180330235735-7e3ec16e158d
 github.com/influxdata/telegraf
 github.com/influxdata/telegraf/logger
@@ -39,19 +43,21 @@ github.com/influxdata/telegraf/metric
 github.com/influxdata/telegraf/internal/templating
 # github.com/influxdata/wlog v0.0.0-20160411224016-7c63b0a71ef8
 github.com/influxdata/wlog
+# github.com/jcmturner/gofork v1.0.0
+github.com/jcmturner/gofork/encoding/asn1
+github.com/jcmturner/gofork/x/crypto/pbkdf2
 # github.com/jtolds/gls v4.2.0+incompatible
 github.com/jtolds/gls
 # github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515
 github.com/kr/logfmt
-# github.com/pierrec/lz4 v0.0.0-20180113151703-ed8d4cc3b461
+# github.com/pierrec/lz4 v0.0.0-20190327172049-315a67e90e41
 github.com/pierrec/lz4
-# github.com/pierrec/xxHash v0.0.0-20170714082455-a0006b13c722
-github.com/pierrec/xxHash/xxHash32
+github.com/pierrec/lz4/internal/xxh32
 # github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
 # github.com/prometheus/common v0.0.0-20171104095907-e3fb1a1acd76
 github.com/prometheus/common/log
-# github.com/rcrowley/go-metrics v0.0.0-20180125231941-8732c616f529
+# github.com/rcrowley/go-metrics v0.0.0-20190706150252-9beb055b7962
 github.com/rcrowley/go-metrics
 # github.com/signalfx/com_signalfx_metrics_protobuf v0.0.0-20170207224855-c2cf2ea6c74f
 github.com/signalfx/com_signalfx_metrics_protobuf
@@ -88,19 +94,63 @@ github.com/smartystreets/goconvey/convey/reporting
 github.com/smartystreets/goconvey/convey/gotest
 # github.com/spaolacci/murmur3 v0.0.0-20150829172844-0d12bf811670
 github.com/spaolacci/murmur3
-# github.com/stretchr/testify v0.0.0-20160418225827-c5d7a69bf8a2
+# github.com/stretchr/testify v1.3.0
 github.com/stretchr/testify/assert
 # github.com/tidwall/gjson v0.0.0-20180301181557-9ed3f8e1a5d6
 github.com/tidwall/gjson
 # github.com/tidwall/match v1.0.0
 github.com/tidwall/match
-# golang.org/x/sys v0.0.0-20161214190518-d75a52659825
+# golang.org/x/crypto v0.0.0-20190701094942-4def268fd1a4
+golang.org/x/crypto/md4
+golang.org/x/crypto/pbkdf2
+# golang.org/x/net v0.0.0-20190628185345-da137c7871d7
+golang.org/x/net/proxy
+golang.org/x/net/internal/socks
+# golang.org/x/sys v0.0.0-20190712062909-fae7ac547cb7
 golang.org/x/sys/windows/svc/eventlog
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 golang.org/x/sys/windows/registry
 # gopkg.in/alecthomas/kingpin.v2 v2.2.3
 gopkg.in/alecthomas/kingpin.v2
+# gopkg.in/jcmturner/aescts.v1 v1.0.1
+gopkg.in/jcmturner/aescts.v1
+# gopkg.in/jcmturner/dnsutils.v1 v1.0.1
+gopkg.in/jcmturner/dnsutils.v1
+# gopkg.in/jcmturner/gokrb5.v7 v7.3.0
+gopkg.in/jcmturner/gokrb5.v7/asn1tools
+gopkg.in/jcmturner/gokrb5.v7/client
+gopkg.in/jcmturner/gokrb5.v7/config
+gopkg.in/jcmturner/gokrb5.v7/credentials
+gopkg.in/jcmturner/gokrb5.v7/gssapi
+gopkg.in/jcmturner/gokrb5.v7/iana/chksumtype
+gopkg.in/jcmturner/gokrb5.v7/iana/keyusage
+gopkg.in/jcmturner/gokrb5.v7/keytab
+gopkg.in/jcmturner/gokrb5.v7/messages
+gopkg.in/jcmturner/gokrb5.v7/types
+gopkg.in/jcmturner/gokrb5.v7/crypto
+gopkg.in/jcmturner/gokrb5.v7/crypto/etype
+gopkg.in/jcmturner/gokrb5.v7/iana/errorcode
+gopkg.in/jcmturner/gokrb5.v7/iana/flags
+gopkg.in/jcmturner/gokrb5.v7/iana/nametype
+gopkg.in/jcmturner/gokrb5.v7/iana/patype
+gopkg.in/jcmturner/gokrb5.v7/kadmin
+gopkg.in/jcmturner/gokrb5.v7/krberror
+gopkg.in/jcmturner/gokrb5.v7/iana/etypeID
+gopkg.in/jcmturner/gokrb5.v7/iana
+gopkg.in/jcmturner/gokrb5.v7/iana/adtype
+gopkg.in/jcmturner/gokrb5.v7/iana/asnAppTag
+gopkg.in/jcmturner/gokrb5.v7/iana/msgtype
+gopkg.in/jcmturner/gokrb5.v7/pac
+gopkg.in/jcmturner/gokrb5.v7/iana/addrtype
+gopkg.in/jcmturner/gokrb5.v7/crypto/common
+gopkg.in/jcmturner/gokrb5.v7/crypto/rfc3961
+gopkg.in/jcmturner/gokrb5.v7/crypto/rfc3962
+gopkg.in/jcmturner/gokrb5.v7/crypto/rfc4757
+gopkg.in/jcmturner/gokrb5.v7/crypto/rfc8009
+# gopkg.in/jcmturner/rpc.v1 v1.1.0
+gopkg.in/jcmturner/rpc.v1/mstypes
+gopkg.in/jcmturner/rpc.v1/ndr
 # gopkg.in/logfmt.v0 v0.1.0
 gopkg.in/logfmt.v0
 # gopkg.in/stack.v1 v1.5.0
