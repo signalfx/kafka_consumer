@@ -10,11 +10,10 @@ require (
 	github.com/alecthomas/units v0.0.0-20151022065526-2efee857e7cf // indirect
 	github.com/eapache/go-resiliency v1.2.0 // indirect
 	github.com/golang/protobuf v0.0.0-20171021043952-1643683e1b54 // indirect
-	github.com/gopherjs/gopherjs v0.0.0-20160415133513-19e100e96524 // indirect
+	github.com/gopherjs/gopherjs v0.0.0-20190430165422-3e4dfb77656c // indirect
 	github.com/influxdata/telegraf v0.0.0-20180330235735-7e3ec16e158d
 	github.com/influxdata/wlog v0.0.0-20160411224016-7c63b0a71ef8 // indirect
 	github.com/jcmturner/gofork v1.0.0 // indirect
-	github.com/jtolds/gls v4.2.0+incompatible // indirect
 	github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515 // indirect
 	github.com/pierrec/xxHash v0.0.0-20170714082455-a0006b13c722 // indirect
 	github.com/pkg/profile v1.3.0 // indirect
@@ -26,8 +25,8 @@ require (
 	github.com/signalfx/sarama-cluster v0.0.0-20180405021658-b7a32abeb422
 	github.com/signalfx/telegraf v0.0.0-20180412155503-b679d828a925
 	github.com/sirupsen/logrus v0.0.0-20160416082137-081307d9bc13 // indirect
-	github.com/smartystreets/assertions v0.0.0-20160322215604-2d74a419fbe0 // indirect
-	github.com/smartystreets/goconvey v0.0.0-20160408041408-cc5d85f4f15b
+	github.com/smartystreets/assertions v1.0.0 // indirect
+	github.com/smartystreets/goconvey v0.0.0-20190710185942-9d28bd7c0945
 	github.com/spaolacci/murmur3 v0.0.0-20150829172844-0d12bf811670
 	github.com/stretchr/objx v0.2.0 // indirect
 	github.com/stretchr/testify v1.3.0
@@ -37,7 +36,7 @@ require (
 	golang.org/x/net v0.0.0-20190628185345-da137c7871d7 // indirect
 	golang.org/x/sys v0.0.0-20190712062909-fae7ac547cb7 // indirect
 	golang.org/x/text v0.3.2 // indirect
-	golang.org/x/tools v0.0.0-20190718193113-c81b74871bfb // indirect
+	golang.org/x/tools v0.0.0-20190718200317-82a3ea8a504c // indirect
 	gopkg.in/alecthomas/kingpin.v2 v2.2.3 // indirect
 	gopkg.in/jcmturner/gokrb5.v7 v7.3.0 // indirect
 	gopkg.in/logfmt.v0 v0.1.0 // indirect

@@ -23,7 +23,7 @@ github.com/eapache/queue
 github.com/golang/protobuf/proto
 # github.com/golang/snappy v0.0.1
 github.com/golang/snappy
-# github.com/gopherjs/gopherjs v0.0.0-20160415133513-19e100e96524
+# github.com/gopherjs/gopherjs v0.0.0-20190430165422-3e4dfb77656c
 github.com/gopherjs/gopherjs/js
 # github.com/hashicorp/go-uuid v1.0.1
 github.com/hashicorp/go-uuid
@@ -46,7 +46,7 @@ github.com/influxdata/wlog
 # github.com/jcmturner/gofork v1.0.0
 github.com/jcmturner/gofork/encoding/asn1
 github.com/jcmturner/gofork/x/crypto/pbkdf2
-# github.com/jtolds/gls v4.2.0+incompatible
+# github.com/jtolds/gls v4.20.0+incompatible
 github.com/jtolds/gls
 # github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515
 github.com/kr/logfmt
@@ -84,11 +84,12 @@ github.com/signalfx/sarama-cluster
 github.com/signalfx/telegraf/plugins/outputs/signalfx
 # github.com/sirupsen/logrus v0.0.0-20160416082137-081307d9bc13
 github.com/sirupsen/logrus
-# github.com/smartystreets/assertions v0.0.0-20160322215604-2d74a419fbe0
+# github.com/smartystreets/assertions v1.0.0
 github.com/smartystreets/assertions
+github.com/smartystreets/assertions/internal/go-diff/diffmatchpatch
 github.com/smartystreets/assertions/internal/go-render/render
 github.com/smartystreets/assertions/internal/oglematchers
-# github.com/smartystreets/goconvey v0.0.0-20160408041408-cc5d85f4f15b
+# github.com/smartystreets/goconvey v0.0.0-20190710185942-9d28bd7c0945
 github.com/smartystreets/goconvey/convey
 github.com/smartystreets/goconvey/convey/reporting
 github.com/smartystreets/goconvey/convey/gotest
