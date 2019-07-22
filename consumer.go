@@ -1,12 +1,9 @@
 package main
 
 import (
-	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/plugins/parsers"
 	"github.com/signalfx/golib/datapoint"
 	"github.com/signalfx/golib/event"
 	"github.com/signalfx/golib/sfxclient"
-	"github.com/signalfx/telegraf/plugins/outputs/signalfx"
 	"log"
 	"reflect"
 	"regexp"
@@ -15,27 +12,26 @@ import (
 	"time"
 )
 
-type telegrafParser interface {
-	GetObjects(metrics []telegraf.Metric, dps chan *datapoint.Datapoint, evets chan *event.Event)
+type parser interface {
+	parse(msg []byte, dps chan *datapoint.Datapoint, events chan *event.Event) (int, error)
 }
 
 type consumer struct {
 	consumer clusterConsumer
 	topics   []string
 	config   *config
-	parser   parsers.Parser
 	regexed  *regexp.Regexp
 
 	replacements chan struct{}
 
 	done  chan struct{}
 	wg    sync.WaitGroup
-	tsfx  telegrafParser
+	parser parser
 	dps   chan *datapoint.Datapoint
 	evts  chan *event.Event
 	stats struct {
 		numMessages          int64
-		numSentToParse       int64
+		numMetricsParsed     int64
 		numErrs              int64
 		numReplacements      int64
 		numParseErrs         int64
@@ -67,14 +63,14 @@ func (c *consumer) consume() {
 			logIfErr("E! Error fetching new topic list! %s", c.refreshInternal())
 		case msg := <-c.consumer.Messages():
 			atomic.AddInt64(&c.stats.numMessages, 1)
-			metrics, err := c.parser.Parse(msg.Value)
-			if err == nil {
-				atomic.AddInt64(&c.stats.numSentToParse, 1)
-				c.tsfx.GetObjects(metrics, c.dps, c.evts)
+
+			if numMetrics, err := c.parser.parse(msg.Value, c.dps, c.evts); err == nil {
+				atomic.AddInt64(&c.stats.numMetricsParsed, int64(numMetrics))
 			} else {
-				log.Printf("E! Message Parse Error\nmessage: %s\nerror: %s", msg.Value, err)
 				atomic.AddInt64(&c.stats.numParseErrs, 1)
+				log.Printf("E! Message Parse Error\nmessage: %v\nerror: %s", msg, err)
 			}
+
 			c.consumer.MarkOffset(msg, "")
 		case err := <-c.consumer.Errors():
 			atomic.AddInt64(&c.stats.numErrs, 1)
@@ -137,7 +133,7 @@ func (c *consumer) Datapoints() []*datapoint.Datapoint {
 	dims := map[string]string{"path": "kafka_consumer", "obj": "consumer"}
 	dps := []*datapoint.Datapoint{
 		sfxclient.CumulativeP("total_messages_received", dims, &c.stats.numMessages),
-		sfxclient.CumulativeP("total_messages_sent_to_parse", dims, &c.stats.numSentToParse),
+		sfxclient.CumulativeP("total_messages_parsed", dims, &c.stats.numMetricsParsed),
 		sfxclient.CumulativeP("total_errors_received", dims, &c.stats.numErrs),
 	}
 	return dps
@@ -145,37 +141,39 @@ func (c *consumer) Datapoints() []*datapoint.Datapoint {
 
 func newConsumer(c *config, dps chan *datapoint.Datapoint, evts chan *event.Event) (*consumer, error) {
 	regexed, err := regexp.Compile(c.topicPattern)
-	if err == nil {
-		var valid []string
-		valid, err = c.getTopicList(regexed)
-		if err == nil {
-			var cc clusterConsumer
-			cc, err = c.getClusterConsumer(valid, c.offset)
-			if err == nil {
-				var parser parsers.Parser
-				parser, err = c.parserConstructor()
-				if err == nil {
-					consumer := &consumer{
-						consumer:     cc,
-						config:       c,
-						topics:       valid,
-						parser:       parser,
-						done:         make(chan struct{}),
-						regexed:      regexed,
-						tsfx:         signalfx.NewSignalFx(),
-						dps:          dps,
-						evts:         evts,
-						replacements: make(chan struct{}, 10),
-					}
-
-					go consumer.consume()
-					go consumer.refresh()
-					consumer.wg.Add(2)
-
-					return consumer, nil
-				}
-			}
-		}
+	if err != nil {
+		return nil, err
 	}
-	return nil, err
+
+	valid, err := c.getTopicList(regexed)
+	if err != nil {
+		return nil, err
+	}
+
+	cc, err := c.getClusterConsumer(valid, c.offset)
+	if err != nil {
+		return nil, err
+	}
+
+	parser, err := c.getParser()
+	if err != nil {
+		return nil, err
+	}
+
+	consumer := &consumer{
+		consumer:     cc,
+		config:       c,
+		topics:       valid,
+		parser:       parser,
+		done:         make(chan struct{}),
+		regexed:      regexed,
+		dps:          dps,
+		evts:         evts,
+		replacements: make(chan struct{}, 10),
+	}
+
+	go consumer.consume()
+	go consumer.refresh()
+	consumer.wg.Add(2)
+	return consumer, nil
 }

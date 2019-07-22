@@ -149,7 +149,8 @@ func (s *signalfxForwarder) sendToSignalFx(buf []*datapoint.Datapoint, i int) {
 	s.stats.dPSendTime.Add(float64(time.Now().UnixNano() - now))
 }
 
-func newSignalFxForwarder(c *config) *signalfxForwarder {
+func newSignalFxForwarder(
+	c *config, dps chan *datapoint.Datapoint, evts chan *event.Event) *signalfxForwarder {
 	chans := make([]chan *datapoint.Datapoint, c.numDrainThreads)
 	sinks := make([]dpsink.Sink, c.numDrainThreads)
 	tr := &http.Transport{
@@ -157,16 +158,15 @@ func newSignalFxForwarder(c *config) *signalfxForwarder {
 		IdleConnTimeout:    30 * time.Second,
 		DisableCompression: true,
 	}
-	client := http.Client{
+	client := &http.Client{
 		Transport: tr,
 		Timeout:   5 * time.Second,
 	}
+
 	for i := range chans {
 		s := sfxclient.NewHTTPSink()
 		s.Client = client
-		s.AuthToken = c.sfxToken
-		s.DatapointEndpoint = c.sfxEndpoint + "/v2/datapoint"
-		s.EventEndpoint = c.sfxEndpoint + "/v2/event"
+		c.configureHTTPSink(s)
 		sinks[i] = s
 
 		if c.useHashing {
@@ -177,8 +177,8 @@ func newSignalFxForwarder(c *config) *signalfxForwarder {
 	f := &signalfxForwarder{
 		chans:  chans,
 		sinks:  sinks,
-		dps:    make(chan *datapoint.Datapoint, c.channelSize*c.numDrainThreads),
-		evts:   make(chan *event.Event, c.channelSize),
+		dps:    dps,
+		evts:   evts,
 		done:   make(chan struct{}, 1),
 		config: c,
 		ctx:    context.TODO(),

@@ -16,7 +16,10 @@ require (
 	github.com/influxdata/telegraf v0.0.0-20180330235735-7e3ec16e158d
 	github.com/influxdata/wlog v0.0.0-20160411224016-7c63b0a71ef8 // indirect
 	github.com/jcmturner/gofork v1.0.0 // indirect
+	github.com/json-iterator/go v1.1.6
 	github.com/mailru/easyjson v0.0.0-20190626092158-b2ccc519800e // indirect
+	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
+	github.com/modern-go/reflect2 v1.0.1 // indirect
 	github.com/opentracing/opentracing-go v1.1.0 // indirect
 	github.com/pierrec/xxHash v0.0.0-20170714082455-a0006b13c722 // indirect
 	github.com/pkg/profile v1.3.0 // indirect

@@ -32,9 +32,9 @@ github.com/gopherjs/gopherjs/js
 # github.com/hashicorp/go-uuid v1.0.1
 github.com/hashicorp/go-uuid
 # github.com/influxdata/telegraf v0.0.0-20180330235735-7e3ec16e158d
-github.com/influxdata/telegraf
 github.com/influxdata/telegraf/logger
 github.com/influxdata/telegraf/plugins/parsers
+github.com/influxdata/telegraf
 github.com/influxdata/telegraf/plugins/parsers/collectd
 github.com/influxdata/telegraf/plugins/parsers/dropwizard
 github.com/influxdata/telegraf/plugins/parsers/graphite
@@ -50,6 +50,8 @@ github.com/influxdata/wlog
 # github.com/jcmturner/gofork v1.0.0
 github.com/jcmturner/gofork/encoding/asn1
 github.com/jcmturner/gofork/x/crypto/pbkdf2
+# github.com/json-iterator/go v1.1.6
+github.com/json-iterator/go
 # github.com/jtolds/gls v4.20.0+incompatible
 github.com/jtolds/gls
 # github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515
@@ -59,6 +61,10 @@ github.com/mailru/easyjson
 github.com/mailru/easyjson/jlexer
 github.com/mailru/easyjson/jwriter
 github.com/mailru/easyjson/buffer
+# github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
+github.com/modern-go/concurrent
+# github.com/modern-go/reflect2 v1.0.1
+github.com/modern-go/reflect2
 # github.com/opentracing/opentracing-go v1.1.0
 github.com/opentracing/opentracing-go
 github.com/opentracing/opentracing-go/log

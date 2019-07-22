@@ -1,16 +1,22 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"github.com/Shopify/sarama"
 	"github.com/influxdata/telegraf/logger"
 	"github.com/influxdata/telegraf/plugins/parsers"
 	"github.com/signalfx/golib/datapoint"
+	"github.com/signalfx/golib/event"
 	"github.com/signalfx/golib/httpdebug"
+	"github.com/signalfx/golib/sfxclient"
 	"github.com/signalfx/sarama-cluster"
+	"github.com/signalfx/telegraf/plugins/outputs/signalfx"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"regexp"
@@ -35,6 +41,17 @@ type saramaClient interface {
 	Topics() ([]string, error)
 }
 
+const (
+	jsonParser     = "json"
+	telegrafParser = "telegraf"
+)
+
+const (
+	signalfxOutput = "signalfx"
+	nullOutput     = "null"
+	stdoutOutput   = "stdout"
+)
+
 type config struct {
 	kafkaBroker           string
 	consumerGroup         string
@@ -44,6 +61,8 @@ type config struct {
 	offset                string
 	logFile               string
 	debugServer           string
+	parser                string
+	writer                string
 	refreshInterval       time.Duration
 	numDrainThreads       int
 	channelSize           int
@@ -68,7 +87,7 @@ func getConfig() (*config, error) {
 	kafkaBroker := flag.String("KafkaBroker", "", "Kafka Broker to connect to (required to be set)")
 	consumerGroup := flag.String("KafkaGroup", "default_kafka_consumer_group", "Kafka Consumer Group to be part")
 	topicPattern := flag.String("KafkaTopicPattern", "", "Kafka Topic Pattern to listen on")
-	sfxEndpoint := flag.String("SfxEndpoint", "https://ingest.aws1.signalfx.com", "SignalFx endpoint to talk to")
+	sfxEndpoint := flag.String("SfxEndpoint", "https://ingest.us0.signalfx.com", "SignalFx endpoint to talk to")
 	sfxToken := flag.String("SfxToken", "", "SignalFx Ingest API Token to use (required to be set)")
 	offset := flag.String("KafkaOffsetMode", "newest", "Whether to start from reading oldest offset, or newest")
 	debug := flag.Bool("Debug", false, "Turn debug on")
@@ -77,9 +96,12 @@ func getConfig() (*config, error) {
 	numDrainThreads := flag.Int("NumDrainThreads", 10, "Number of threads draining to SignalFx")
 	channelSize := flag.Int("ChannelSize", 100000, "Channel size per drain to SignalFx")
 	batchSize := flag.Int("BatchSize", 5000, "Max batch size to send to SignalFx")
-	useHashing := flag.Bool("UseHashing", true, "Has the datapoint to a particular channel")
+	useHashing := flag.Bool("UseHashing", true, "Hash the datapoint to a particular channel")
 	debugServer := flag.String("DebugServer", "", "Put up a debug server at the address specified")
 	sendMetrics := flag.Bool("SendMetrics", true, "Self report metrics")
+	parser := flag.String("Parser", "json", "Parser for incoming messages (json or telegraf)")
+	writer := flag.String("Writer", "signalfx", "Location to send metrics (null, stdout, or signalfx)")
+
 	flag.Parse()
 	c := &config{
 		kafkaBroker:     *kafkaBroker,
@@ -98,6 +120,8 @@ func getConfig() (*config, error) {
 		debugServer:     *debugServer,
 		sendMetrics:     *sendMetrics,
 		metricInterval:  time.Second * 10,
+		parser:          *parser,
+		writer:          *writer,
 	}
 	instanceConfig = c
 	return c, c.postConfig()
@@ -115,6 +139,34 @@ func (c *config) postConfig() error {
 		return cluster.NewConsumer(addrs, groupID, topics, config)
 	}
 	return nil
+}
+
+func (c *config) getParser() (parser, error) {
+	switch c.parser {
+	case jsonParser:
+		return &json{}, nil
+	case telegrafParser:
+		tparse, err := c.parserConstructor()
+		if err != nil {
+			return nil, err
+		}
+		return &telegrafP{parser: tparse, sfx: signalfx.NewSignalFx()}, nil
+	}
+
+	return nil, fmt.Errorf("unknown parser %s", c.parser)
+}
+
+func (c *config) getWriter(dps chan *datapoint.Datapoint, evts chan *event.Event) (writer, error) {
+	switch c.writer {
+	case stdoutOutput:
+		return newStdoutWriter(dps, evts), nil
+	case nullOutput:
+		return newNullWriter(dps, evts), nil
+	case signalfxOutput:
+		return newSignalFxForwarder(c, dps, evts), nil
+	}
+
+	return nil, fmt.Errorf("unknown writer %s", c.writer)
 }
 
 func (c *config) getClusterConsumer(valid []string, offset string) (clusterConsumer, error) {
@@ -141,95 +193,131 @@ func (c *config) getOffset() int64 {
 	return sarama.OffsetNewest
 }
 
-func (c *config) getTopicList(regexed *regexp.Regexp) (valid []string, err error) {
+func (c *config) getTopicList(regexed *regexp.Regexp) ([]string, error) {
 	clientConfig := sarama.NewConfig()
 	clientConfig.Consumer.Offsets.Initial = c.getOffset()
 	client, err := c.newClientConstructor([]string{c.kafkaBroker}, clientConfig)
-	if err == nil {
-		defer func() {
-			logIfErr("E! error closing client! %s", client.Close())
-		}()
+	if err != nil {
+		return nil, err
+	}
 
-		topics, err := client.Topics()
-		if err == nil {
-			valid = make([]string, 0)
-			for _, k := range topics {
-				if regexed.Match([]byte(k)) {
-					valid = append(valid, k)
-				}
-			}
-			sort.Strings(valid)
+	defer func() {
+		logIfErr("E! error closing client! %s", client.Close())
+	}()
+
+	topics, err := client.Topics()
+	if err != nil {
+		return nil, err
+	}
+
+	valid := make([]string, 0)
+	for _, k := range topics {
+		if regexed.Match([]byte(k)) {
+			valid = append(valid, k)
 		}
 	}
-	return
+	sort.Strings(valid)
+
+	return valid, nil
+}
+
+// configureHTTPSink with auth and endpoints from config
+func (c *config) configureHTTPSink(sink *sfxclient.HTTPSink) {
+	sink.AuthToken = c.sfxToken
+	sink.DatapointEndpoint = c.sfxEndpoint + "/v2/datapoint"
+	sink.EventEndpoint = c.sfxEndpoint + "/v2/event"
 }
 
 type kafkaConsumer struct {
 	done                chan struct{}
-	f                   *signalfxForwarder
+	writer              writer
 	c                   *consumer
 	debugServer         *httpdebug.Server
 	debugServerListener net.Listener
 	sigs                chan os.Signal
+	internalMetrics     *sfxclient.HTTPSink
 }
 
-func start(config *config) (k *kafkaConsumer, err error) {
-	f := newSignalFxForwarder(config)
+func start(config *config) (*kafkaConsumer, error) {
+	dps := make(chan *datapoint.Datapoint, config.channelSize*config.numDrainThreads)
+	evts := make(chan *event.Event, config.channelSize)
 
-	var c *consumer
-	c, err = newConsumer(config, f.dps, f.evts)
-	if err == nil {
-		done := make(chan struct{})
-		logger.SetupLogging(c.config.debug, false, c.config.logFile)
-		k = &kafkaConsumer{
-			f:    f,
-			c:    c,
-			done: done,
-			sigs: make(chan os.Signal, 1),
-		}
-		if config.debugServer != "" {
-			listener, err := net.Listen("tcp", config.debugServer)
-			if err == nil {
-				k.debugServerListener = listener
-				k.debugServer = httpdebug.New(&httpdebug.Config{
-					Logger:        nil,
-					ExplorableObj: k,
-				})
-				go func() {
-					logIfErr("Finished listening on debug server %s", k.debugServer.Serve(listener))
-				}()
-			}
-			logIfErr("E! cannot setup debug server %s", err)
-		}
-		if config.sendMetrics {
-			go k.metrics(config.metricInterval)
-		}
+	c, err := newConsumer(config, dps, evts)
+	if err != nil {
+		return nil, err
 	}
-	return k, err
+	writer, err := config.getWriter(dps, evts)
+	if err != nil {
+		return nil, err
+	}
+
+	done := make(chan struct{})
+	logger.SetupLogging(c.config.debug, false, c.config.logFile)
+
+	k := &kafkaConsumer{
+		writer: writer,
+		c:      c,
+		done:   done,
+		sigs:   make(chan os.Signal, 1),
+		internalMetrics: createInternalMetrics(config),
+	}
+	if config.debugServer != "" {
+		listener, err := net.Listen("tcp", config.debugServer)
+		if err == nil {
+			k.debugServerListener = listener
+			k.debugServer = httpdebug.New(&httpdebug.Config{
+				Logger:        nil,
+				ExplorableObj: k,
+			})
+			go func() {
+				logIfErr("Finished listening on debug server %s", k.debugServer.Serve(listener))
+			}()
+		}
+		logIfErr("E! cannot setup debug server %s", err)
+	}
+	if config.sendMetrics {
+		go k.metrics(config.metricInterval, dps)
+	}
+	return k, nil
 }
 
-func (k *kafkaConsumer) metrics(t time.Duration) {
+func createInternalMetrics(c *config) *sfxclient.HTTPSink {
+	tr := &http.Transport{
+		IdleConnTimeout:    30 * time.Second,
+		DisableCompression: true,
+	}
+	client := &http.Client{
+		Transport: tr,
+		Timeout:   5 * time.Second,
+	}
+
+	sink := sfxclient.NewHTTPSink()
+	sink.Client = client
+	c.configureHTTPSink(sink)
+	return sink
+}
+
+func (k *kafkaConsumer) metrics(t time.Duration, dps chan *datapoint.Datapoint) {
 	for {
 		select {
 		case <-k.done:
 			return
 		case <-time.After(t):
-			dps := k.Datapoints()
-			for _, d := range dps {
-				k.f.dps <- d
-			}
+			err := k.internalMetrics.AddDatapoints(context.TODO(), k.Datapoints())
+			logIfErr("E! Error sending internal metrics: %s", err)
 		}
 	}
 }
 
 func (k *kafkaConsumer) wait() {
 	signal.Notify(k.sigs, syscall.SIGTERM)
+	signal.Notify(k.sigs, syscall.SIGINT)
 	go func() {
 		sig := <-k.sigs
 		log.Printf("I! Caught the %s signal, draining consumer", sig)
 		k.c.close()
 		log.Printf("I! Done draining consumer, now draining forwarder")
-		k.f.close()
+		k.writer.close()
 		close(k.done)
 	}()
 	log.Println("I! Awaiting metrics")
@@ -238,7 +326,7 @@ func (k *kafkaConsumer) wait() {
 }
 
 func (k *kafkaConsumer) Datapoints() []*datapoint.Datapoint {
-	dps := k.f.Datapoints()
+	dps := k.writer.Datapoints()
 	dps = append(dps, k.c.Datapoints()...)
 	return dps
 }
@@ -256,8 +344,16 @@ func main() {
 	log.Printf("I! Running version %s", version)
 	config, err := getConfig()
 	logIfErr("E! Unable to initialize config: %s", err)
+	if err != nil {
+		os.Exit(1)
+	}
+
 	mainInstance, err = start(config)
 	logIfErr("E! Unable to create instance config: %s", err)
+	if err != nil {
+		os.Exit(1)
+	}
+
 	atomic.StoreInt64(&setup, 1)
 	mainInstance.wait()
 }
