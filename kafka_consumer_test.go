@@ -22,15 +22,12 @@ func Test(t *testing.T) {
 			for atomic.LoadInt64(&setup) == 0 {
 				runtime.Gosched()
 			}
-			for len(mainInstance.c.dps) == 0 {
-				runtime.Gosched()
-			}
 			mainInstance.sigs <- syscall.SIGTERM
 			c <- struct{}{}
 		}()
 		main()
 		<-c
-		So(len(mainInstance.Datapoints()), ShouldEqual, 23)
+		So(len(mainInstance.Datapoints()), ShouldEqual, 24)
 		logIfErr("Print %s", errors.New("blarg"))
 		config.offset = "oldest"
 		So(config.getOffset(), ShouldEqual, sarama.OffsetOldest)

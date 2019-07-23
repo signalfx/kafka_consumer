@@ -191,7 +191,7 @@ func TestConsumer(t *testing.T) {
 			config.tParser.setError(nil)
 		})
 		Convey("test datapoints", func() {
-			So(len(c.Datapoints()), ShouldEqual, 3)
+			So(len(c.Datapoints()), ShouldEqual, 4)
 		})
 		Convey("test refresh", func() {
 			config.client.setTopics([]string{"one", "two"})

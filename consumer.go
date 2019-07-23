@@ -135,6 +135,7 @@ func (c *consumer) Datapoints() []*datapoint.Datapoint {
 		sfxclient.CumulativeP("total_messages_received", dims, &c.stats.numMessages),
 		sfxclient.CumulativeP("total_messages_parsed", dims, &c.stats.numMetricsParsed),
 		sfxclient.CumulativeP("total_errors_received", dims, &c.stats.numErrs),
+		sfxclient.CumulativeP("total_parse_errors_received", dims, &c.stats.numParseErrs),
 	}
 	return dps
 }
