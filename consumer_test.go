@@ -7,7 +7,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/parsers"
 	"github.com/signalfx/golib/datapoint"
 	"github.com/signalfx/golib/event"
-	"github.com/signalfx/sarama-cluster"
 	. "github.com/smartystreets/goconvey/convey"
 	"github.com/stretchr/testify/assert"
 	"os"
@@ -145,7 +144,7 @@ func getTestConfig(t *testing.T) *testingConfig {
 	instanceConfig.newClientConstructor = func(addrs []string, conf *sarama.Config) (saramaClient, error) {
 		return testConfig.client, nil
 	}
-	instanceConfig.newClusterConstructor = func(addrs []string, groupID string, topics []string, config *cluster.Config) (clusterConsumer, error) {
+	instanceConfig.newClusterConstructor = func(addrs []string, groupID string, config *sarama.Config) (sarama.ConsumerGroup, error) {
 		return testConfig.tcluster, nil
 	}
 	instanceConfig.parserConstructor = func() (parsers.Parser, error) {
@@ -203,12 +202,12 @@ func TestConsumer(t *testing.T) {
 			config.tcluster.setError(nil)
 		})
 		Convey("test replacement error", func() {
-			config.newClusterConstructor = func(addrs []string, groupID string, topics []string, config *cluster.Config) (clusterConsumer, error) {
+			config.newClusterConstructor = func(addrs []string, groupID string, config *sarama.Config) (sarama.ConsumerGroup, error) {
 				return nil, errors.New("nope")
 			}
 			So(c.replaceConsumer(nil), ShouldNotBeNil)
-			config.newClusterConstructor = func(addrs []string, groupID string, topics []string, config *cluster.Config) (clusterConsumer, error) {
-				ret, err := cluster.NewConsumer(addrs, groupID, topics, config)
+			config.newClusterConstructor = func(addrs []string, groupID string, config *sarama.Config) (sarama.ConsumerGroup, error) {
+				ret, err := sarama.NewConsumerGroup(addrs, groupID, topics, config)
 				return ret, err
 			}
 		})

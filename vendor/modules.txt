@@ -99,8 +99,6 @@ github.com/signalfx/golib/trace/format
 github.com/signalfx/golib/datapoint/dptest
 github.com/signalfx/golib/eventcounter
 github.com/signalfx/golib/logkey
-# github.com/signalfx/sarama-cluster v2.1.13+incompatible
-github.com/signalfx/sarama-cluster
 # github.com/signalfx/telegraf v0.0.0-20180412155503-b679d828a925
 github.com/signalfx/telegraf/plugins/outputs/signalfx
 # github.com/sirupsen/logrus v0.0.0-20160416082137-081307d9bc13
