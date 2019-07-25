@@ -8,6 +8,8 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/influxdata/telegraf/logger"
 	"github.com/influxdata/telegraf/plugins/parsers"
+	"github.com/rcrowley/go-metrics"
+	"github.com/rcrowley/go-metrics/exp"
 	"github.com/signalfx/golib/datapoint"
 	"github.com/signalfx/golib/event"
 	"github.com/signalfx/golib/httpdebug"
@@ -188,6 +190,7 @@ func (c *config) getConsumerGroup(offset string, clientId string) (sarama.Consum
 	kafkaConfig.Version = sarama.V0_10_2_0
 	kafkaConfig.Consumer.Return.Errors = true
 	kafkaConfig.Consumer.Offsets.Initial = c.getOffset()
+	kafkaConfig.MetricRegistry = metrics.DefaultRegistry
 	clusterConsumer, err := c.newClusterConstructor(
 		[]string{c.kafkaBroker},
 		c.consumerGroup,
@@ -299,6 +302,8 @@ func start(config *config) (*kafkaConsumer, error) {
 				Logger:        nil,
 				ExplorableObj: k,
 			})
+			k.debugServer.Mux.Handle("/debug/metrics", exp.ExpHandler(metrics.DefaultRegistry))
+
 			go func() {
 				logIfErr("Finished listening on debug server %s", k.debugServer.Serve(listener))
 			}()

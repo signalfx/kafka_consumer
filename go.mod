@@ -24,7 +24,7 @@ require (
 	github.com/pierrec/xxHash v0.0.0-20170714082455-a0006b13c722 // indirect
 	github.com/pkg/profile v1.3.0 // indirect
 	github.com/prometheus/common v0.0.0-20171104095907-e3fb1a1acd76 // indirect
-	github.com/rcrowley/go-metrics v0.0.0-20190706150252-9beb055b7962 // indirect
+	github.com/rcrowley/go-metrics v0.0.0-20190706150252-9beb055b7962
 	github.com/signalfx/com_signalfx_metrics_protobuf v0.0.0-20170207224855-c2cf2ea6c74f // indirect
 	github.com/signalfx/gohistogram v0.0.0-20160107210732-1ccfd2ff5083 // indirect
 	github.com/signalfx/golib v2.4.0+incompatible
