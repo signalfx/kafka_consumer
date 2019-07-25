@@ -51,17 +51,17 @@ const (
 )
 
 type config struct {
-	kafkaBroker           string
-	consumerGroup         string
-	topicPattern          string
-	sfxEndpoint           string
-	sfxToken              string
-	offset                string
-	logFile               string
-	debugServer           string
-	parser                string
-	writer                string
-	refreshInterval       time.Duration
+	kafkaBroker   string
+	consumerGroup string
+	topicPattern  string
+	sfxEndpoint   string
+	sfxToken      string
+	offset        string
+	logFile       string
+	debugServer   string
+	parser        string
+	writer        string
+	//refreshInterval       time.Duration
 	numDrainThreads       int
 	channelSize           int
 	batchSize             int
@@ -72,7 +72,7 @@ type config struct {
 	newClientConstructor  func(addrs []string, conf *sarama.Config) (saramaClient, error)
 	newClusterConstructor func(addrs []string, groupID string, config *sarama.Config) (sarama.ConsumerGroup, error)
 	parserConstructor     func() (parsers.Parser, error)
-	parseThreads          uint
+	numConsumers          uint
 }
 
 var errorRequiredOptions = errors.New("options KafkaBroker and SfxToken are required")
@@ -103,8 +103,7 @@ func getConfig() (*config, error) {
 	offset := flag.String("KafkaOffsetMode", "newest", "Whether to start from reading oldest offset, or newest")
 	debug := flag.Bool("Debug", false, "Turn debug on")
 	logFile := flag.String("LogFile", "", "Log file to use (default stdout)")
-	refreshInterval := flag.Duration("RefreshInterval", time.Second*10, "Refresh interval for kafka topics")
-	parseThreads := flag.Uint("ParseThreads", 1, "Number of threads processing Kafka messages")
+	//refreshInterval := flag.Duration("RefreshInterval", time.Second*10, "Refresh interval for kafka topics")
 	numDrainThreads := flag.Int("NumDrainThreads", 10, "Number of threads draining to SignalFx")
 	channelSize := flag.Int("ChannelSize", 100000, "Channel size per drain to SignalFx")
 	batchSize := flag.Int("BatchSize", 5000, "Max batch size to send to SignalFx")
@@ -113,18 +112,19 @@ func getConfig() (*config, error) {
 	sendMetrics := flag.Bool("SendMetrics", true, "Self report metrics")
 	parser := flag.String("Parser", "json", "Parser for incoming messages (json or telegraf)")
 	writer := flag.String("Writer", "signalfx", "Location to send metrics (null, stdout, or signalfx)")
+	numConsumers := flag.Uint("NumConsumers", 1, "Default number of Kafka consumers to run concurrently")
 
 	flag.Parse()
 	c := &config{
-		kafkaBroker:     *kafkaBroker,
-		consumerGroup:   *consumerGroup,
-		topicPattern:    *topicPattern,
-		sfxEndpoint:     *sfxEndpoint,
-		sfxToken:        *sfxToken,
-		offset:          *offset,
-		debug:           *debug,
-		logFile:         *logFile,
-		refreshInterval: *refreshInterval,
+		kafkaBroker:   *kafkaBroker,
+		consumerGroup: *consumerGroup,
+		topicPattern:  *topicPattern,
+		sfxEndpoint:   *sfxEndpoint,
+		sfxToken:      *sfxToken,
+		offset:        *offset,
+		debug:         *debug,
+		logFile:       *logFile,
+		//refreshInterval: *refreshInterval,
 		numDrainThreads: *numDrainThreads,
 		channelSize:     *channelSize,
 		batchSize:       *batchSize,
@@ -134,7 +134,7 @@ func getConfig() (*config, error) {
 		metricInterval:  time.Second * 10,
 		parser:          *parser,
 		writer:          *writer,
-		parseThreads:    *parseThreads,
+		numConsumers:    *numConsumers,
 	}
 	instanceConfig = c
 	return c, c.postConfig()
@@ -182,14 +182,16 @@ func (c *config) getWriter(dps chan *datapoint.Datapoint, evts chan *event.Event
 	return nil, fmt.Errorf("unknown writer %s", c.writer)
 }
 
-func (c *config) getConsumerGroup(offset string) (sarama.ConsumerGroup, error) {
-	clusterConfig := sarama.NewConfig()
-	clusterConfig.Consumer.Return.Errors = true
-	clusterConfig.Consumer.Offsets.Initial = c.getOffset()
+func (c *config) getConsumerGroup(offset string, clientId string) (sarama.ConsumerGroup, error) {
+	kafkaConfig := sarama.NewConfig()
+	kafkaConfig.ClientID = clientId
+	kafkaConfig.Version = sarama.V0_10_2_0
+	kafkaConfig.Consumer.Return.Errors = true
+	kafkaConfig.Consumer.Offsets.Initial = c.getOffset()
 	clusterConsumer, err := c.newClusterConstructor(
 		[]string{c.kafkaBroker},
 		c.consumerGroup,
-		clusterConfig,
+		kafkaConfig,
 	)
 	return clusterConsumer, err
 }
@@ -205,7 +207,7 @@ func (c *config) getOffset() int64 {
 	return sarama.OffsetNewest
 }
 
-func (c *config) getTopicList(regexed *regexp.Regexp) ([]string, error) {
+func (c *config) getTopicList() ([]string, error) {
 	clientConfig := sarama.NewConfig()
 	clientConfig.Consumer.Offsets.Initial = c.getOffset()
 	client, err := c.newClientConstructor([]string{c.kafkaBroker}, clientConfig)
@@ -216,6 +218,11 @@ func (c *config) getTopicList(regexed *regexp.Regexp) ([]string, error) {
 	defer func() {
 		logIfErr("E! error closing client! %s", client.Close())
 	}()
+
+	regexed, err := regexp.Compile(c.topicPattern)
+	if err != nil {
+		return nil, fmt.Errorf("unable to compiled topic pattern %s: %s", c.topicPattern, err)
+	}
 
 	topics, err := client.Topics()
 	if err != nil {
@@ -243,7 +250,7 @@ func (c *config) configureHTTPSink(sink *sfxclient.HTTPSink) {
 type kafkaConsumer struct {
 	done                chan struct{}
 	writer              writer
-	c                   *consumer
+	consumers           []*consumer
 	debugServer         *httpdebug.Server
 	debugServerListener net.Listener
 	sigs                chan os.Signal
@@ -254,21 +261,32 @@ func start(config *config) (*kafkaConsumer, error) {
 	dps := make(chan *datapoint.Datapoint, config.channelSize*config.numDrainThreads)
 	evts := make(chan *event.Event, config.channelSize)
 
-	c, err := newConsumer(config, dps, evts)
+	topics, err := config.getTopicList()
 	if err != nil {
 		return nil, err
 	}
+
+	var consumers []*consumer
+	for i := 0; i < int(config.numConsumers); i++ {
+		c, err := newConsumer(config, i, topics, dps, evts)
+		if err != nil {
+			return nil, err
+		}
+		// TODO: stop previous consumers if fail
+		consumers = append(consumers, c)
+	}
+
 	writer, err := config.getWriter(dps, evts)
 	if err != nil {
 		return nil, err
 	}
 
 	done := make(chan struct{})
-	logger.SetupLogging(c.config.debug, false, c.config.logFile)
+	logger.SetupLogging(config.debug, false, config.logFile)
 
 	k := &kafkaConsumer{
 		writer:          writer,
-		c:               c,
+		consumers:       consumers,
 		done:            done,
 		sigs:            make(chan os.Signal, 1),
 		internalMetrics: createInternalMetrics(config),
@@ -335,7 +353,10 @@ func (k *kafkaConsumer) wait() {
 	go func() {
 		sig := <-k.sigs
 		log.Printf("I! Caught the %s signal, draining consumer", sig)
-		k.c.close()
+
+		for _, c := range k.consumers {
+			c.close()
+		}
 		log.Printf("I! Done draining consumer, now draining forwarder")
 		k.writer.close()
 		close(k.done)
@@ -347,7 +368,9 @@ func (k *kafkaConsumer) wait() {
 
 func (k *kafkaConsumer) Datapoints() []*datapoint.Datapoint {
 	dps := k.writer.Datapoints()
-	dps = append(dps, k.c.Datapoints()...)
+	for _, c := range k.consumers {
+		dps = append(dps, c.Datapoints()...)
+	}
 	return dps
 }
 

@@ -129,7 +129,7 @@ func getTestConfig(t *testing.T) *testingConfig {
 	}
 	testConfig.batchSize = 1
 	testConfig.metricInterval = time.Millisecond * 10
-	testConfig.refreshInterval = time.Millisecond * 10
+	//testConfig.refreshInterval = time.Millisecond * 10
 	testConfig.debugServer = "0.0.0.0:0"
 	testConfig.client = &testSaramaClient{}
 	testConfig.tcluster = &testCluster{
@@ -159,7 +159,7 @@ func TestConsumer(t *testing.T) {
 		config.topicPattern = "("
 		dps := make(chan *datapoint.Datapoint, 10)
 		evts := make(chan *event.Event, 10)
-		_, err := newConsumer(&config.config, dps, evts)
+		_, err := newConsumer(&config.config, nil, dps, evts)
 		So(err, ShouldNotBeNil)
 		config.client.setError(nil)
 		config.topicPattern = ""
@@ -168,7 +168,7 @@ func TestConsumer(t *testing.T) {
 		config := getTestConfig(t)
 		dps := make(chan *datapoint.Datapoint, 10)
 		evts := make(chan *event.Event, 10)
-		c, err := newConsumer(&config.config, dps, evts)
+		c, err := newConsumer(&config.config, []string{"topic"}, dps, evts)
 		So(err, ShouldBeNil)
 		So(c, ShouldNotBeNil)
 		Convey("test err", func() {
@@ -192,27 +192,10 @@ func TestConsumer(t *testing.T) {
 		Convey("test datapoints", func() {
 			So(len(c.Datapoints()), ShouldEqual, 4)
 		})
-		Convey("test refresh", func() {
-			config.client.setTopics([]string{"one", "two"})
-			for atomic.LoadInt64(&c.stats.numReplacements) == 0 {
-				runtime.Gosched()
-			}
-			config.tcluster.setError(errors.New("nope"))
-			So(c.closeConsumer(), ShouldNotBeNil)
-			config.tcluster.setError(nil)
-		})
-		Convey("test replacement error", func() {
-			config.newClusterConstructor = func(addrs []string, groupID string, config *sarama.Config) (sarama.ConsumerGroup, error) {
-				return nil, errors.New("nope")
-			}
-			So(c.replaceConsumer(nil), ShouldNotBeNil)
-			config.newClusterConstructor = func(addrs []string, groupID string, config *sarama.Config) (sarama.ConsumerGroup, error) {
-				ret, err := sarama.NewConsumerGroup(addrs, groupID, topics, config)
-				return ret, err
-			}
-		})
 		Reset(func() {
-			c.close()
+			if err := c.close(); err != nil {
+				t.Fatal(err)
+			}
 		})
 	})
 }
