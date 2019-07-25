@@ -55,6 +55,8 @@ func (c *consumer) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.C
 			atomic.AddInt64(&c.stats.numParseErrs, 1)
 			log.Printf("E! Message Parse Error\nmessage: %v\nerror: %s", msg, err)
 		}
+
+		sess.MarkMessage(msg, "")
 	}
 
 	return nil
