@@ -9,8 +9,9 @@ import java.util.Map;
 import com.google.common.annotations.VisibleForTesting;
 
 public class DataGenerator {
+    private static int NUM_METRICS = 2500;
     private List<String> metricNames;
-    private Map<String, String> dimensionCombination;
+    private List<Map<String, String>> dimensionCombinations;
     private List<MockedDatapoint> mockedDatapoints;
     private String metricNamePadding;
     private String dimNamePadding;
@@ -21,8 +22,8 @@ public class DataGenerator {
         this.metricNamePadding = generatePadding(metricNameLength);
         this.dimNamePadding = generatePadding(dimNameLength);
         this.dimValuePadding = generatePadding(dimValueLength);
-        this.metricNames = generateMetricNames(numMTSs);
-        this.dimensionCombination = generateDimensionCombination(numDimensions);
+        this.metricNames = generateMetricNames();
+        this.dimensionCombinations = generateDimensionCombination(numDimensions, numMTSs);
         this.mockedDatapoints = generateMockedDatapoints();
     }
 
@@ -33,20 +34,22 @@ public class DataGenerator {
     private List<MockedDatapoint> generateMockedDatapoints() {
         List<MockedDatapoint> out = new ArrayList<>();
         metricNames.forEach(metricName -> {
-            MockedDatapoint md = new MockedDatapoint();
-            md.setMetricName(metricName);
-            md.setDimensions(dimensionCombination);
+            dimensionCombinations.forEach(dimensionCombination -> {
+                MockedDatapoint md = new MockedDatapoint();
+                md.setMetricName(metricName);
+                md.setDimensions(dimensionCombination);
 
-            out.add(md);
+                out.add(md);
+            });
         });
         return out;
     }
 
     @VisibleForTesting
-    protected List<String> generateMetricNames(int numMetrics) {
+    protected List<String> generateMetricNames() {
         List<String> out = new ArrayList<>();
 
-        for (int i = 0; i < numMetrics; i++) {
+        for (int i = 0; i < NUM_METRICS; i++) {
             out.add(String.format("kafka_consumer_metric_name_%d_%s", i, metricNamePadding));
         }
 
@@ -54,12 +57,36 @@ public class DataGenerator {
     }
 
     @VisibleForTesting
-    protected Map<String, String> generateDimensionCombination(int numDimensions) {
-        Map<String, String> out = new HashMap<>();
+    protected List<Map<String, String>> generateDimensionCombination(int numDimensions,
+                                                                     int numMTSs) {
+        int numCombinations = numMTSs / NUM_METRICS;
+        List<Map<String, String>> out = new ArrayList<>();
 
+        Map<String, String> seed = new HashMap<>();
         for (int i = 0; i < numDimensions; i++) {
-            out.put(String.format("kafka_consumer_dimension_name_%d_%s", i, dimNamePadding),
+            seed.put(String.format("kafka_consumer_dimension_name_%d_%s", i, dimNamePadding),
                     String.format("kafka_consumer_dimension_value_%d_%s", i, dimValuePadding));
+        }
+
+        out.add(seed);
+        int i = 0;
+
+        while(out.size() < numCombinations) {
+            String changingDim = String
+                    .format("kafka_consumer_dimension_name_%d_%s", 0, dimNamePadding);
+            Map<String, String> newCombination = new HashMap<>();
+            for (Map.Entry<String, String> entry : seed.entrySet()) {
+                if (entry.getKey().equals(changingDim)) {
+                    newCombination.put(changingDim,
+                            String.format("kafka_consumer_dimension_value_%d_%s_%s", 0,
+                                    dimNamePadding, i));
+                } else {
+                    newCombination.put(entry.getKey(), entry.getValue());
+                }
+            }
+
+            out.add(newCombination);
+            i++;
         }
 
         return out;

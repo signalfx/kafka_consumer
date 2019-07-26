@@ -30,8 +30,8 @@ public class MockDatapointKafkaProducer {
     private final static String REPORTING_INTERVAL = "KAFKA_PRODUCER_REPORTING_INTERVAL_MILLIS";
     private static String brokerIP = "localhost";
     private static String topicName = "benchmark2";
-    private static int concurrency = 100;
-    private static int batcheSize = 100000;
+    private static int concurrency = 50;
+    private static int batcheSize = 20000;
     private static long reportingIntervalInMillis = 60000;
 
     public static void main(String args[]) {
@@ -67,12 +67,12 @@ public class MockDatapointKafkaProducer {
                     }
                     producer.close();
                 });
-            }
 
-            try {
-                sleep(reportingIntervalInMillis);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+                try {
+                    sleep(reportingIntervalInMillis / batchedValues.size());
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
             }
 
             System.out.printf("Sent %d messages in %d milliseconds\n", totalSent.get(),
@@ -129,6 +129,10 @@ public class MockDatapointKafkaProducer {
         // Check ENV for configurations
         if (System.getenv(NUM_MTSES) != null) {
             numMTSs = Integer.parseInt(System.getenv(NUM_MTSES));
+            if (numMTSs < 2500) {
+                System.out.printf("Minimum number of MTSs: %d, configured: %d", 2500, numMTSs);
+                System.exit(1);
+            }
         }
 
         if (System.getenv(NUM_MTSES) != null) {
@@ -148,8 +152,8 @@ public class MockDatapointKafkaProducer {
         }
 
         System.out.printf(
-                "CONFIGURATION:\n NUMBER OF MTSs: %d\n NUMBER OF METRICS: %d\n NUMBER OF DIMENSIONS PER MTS: %d\n REPORTING INTERVAL IN MILLISECONDS: %d\n",
-                numMTSs, numMTSs, numDimensions, reportingIntervalInMillis);
+                "CONFIGURATION:\n NUMBER OF MTSs: %d\n NUMBER OF DIMENSIONS PER MTS: %d\n REPORTING INTERVAL IN MILLISECONDS: %d\n",
+                numMTSs, numDimensions, reportingIntervalInMillis);
         System.out.printf("CONCURRENCY:\n %d\n", concurrency);
 
         return new DataGenerator(numMTSs, numDimensions, metricNameLength, dimNameLength,

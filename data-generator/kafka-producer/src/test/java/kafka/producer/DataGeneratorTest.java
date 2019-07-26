@@ -2,44 +2,69 @@ package kafka.producer;
 
 import static org.hamcrest.CoreMatchers.is;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.junit.Assert;
 import org.junit.Test;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 
 public class DataGeneratorTest {
     @Test
-    public void testMakingMetricNames_1() {
-        DataGenerator dataGenerator = new DataGenerator(1, 10, 10, 32, 128);
-        List<String> out = dataGenerator.generateMetricNames(1);
+    public void testMaking2500MTS() {
+        DataGenerator dataGenerator = new DataGenerator(2500, 10, 10, 32, 128);
+        List<String> out = dataGenerator.getMockedDatapoints().stream().map(m -> m.getMetricName())
+                .collect(Collectors.toList());
 
-        Assert.assertThat(out, is(ImmutableList.of("kafka_consumer_metric_name_0______")));
-
-    }
-
-    @Test
-    public void testMakingMetricNames_2() {
-        DataGenerator dataGenerator = new DataGenerator(4, 10, 4, 32, 128);
-        List<String> out = dataGenerator.generateMetricNames(4);
-
-        Assert.assertThat(out, is(ImmutableList
-                .of("kafka_consumer_metric_name_0___", "kafka_consumer_metric_name_1___",
-                        "kafka_consumer_metric_name_2___", "kafka_consumer_metric_name_3___")));
+        Assert.assertThat(out, is(dataGenerator.generateMetricNames()));
 
     }
 
     @Test
-    public void testMakingDimensionCombination_1() {
+    public void testMaking25000MTS() {
+        DataGenerator dataGenerator = new DataGenerator(25000, 10, 10, 32, 128);
+        Set<String> out = dataGenerator.getMockedDatapoints().stream().map(m -> m.getMetricName())
+                .collect(Collectors.toSet());
+        int numMTSs = dataGenerator.getMockedDatapoints().size();
+
+        Assert.assertThat(out,
+                is(dataGenerator.generateMetricNames().stream().collect(Collectors.toSet())));
+
+        Assert.assertThat(numMTSs, is(25000));
+
+    }
+
+    @Test
+    public void testMakingDimensionCombinations_1() {
         DataGenerator dataGenerator = new DataGenerator(10, 1, 64,
                 10, 10);
-        Map<String, String> out = dataGenerator.generateDimensionCombination(1);
+        List<Map<String, String>> out = dataGenerator.generateDimensionCombination(1, 2500);
+        Map<String, String> expected = new HashMap<>();
 
-        Assert.assertThat(out, is(ImmutableMap.of("kafka_consumer_dimension_name_0______",
-                "kafka_consumer_dimension_value_0______")));
+        Assert.assertThat(out, is(ImmutableList.of(ImmutableMap
+                .of("kafka_consumer_dimension_name_0______",
+                        "kafka_consumer_dimension_value_0______"))));
+
+    }
+
+    @Test
+    public void testMakingDimensionCombinations_2() {
+        DataGenerator dataGenerator = new DataGenerator(10, 1, 64,
+                10, 10);
+        Set<Map<String, String>> out = dataGenerator.generateDimensionCombination(1, 5000).stream()
+                .collect(Collectors.toSet());
+
+        Assert.assertThat(out, is(ImmutableSet.of(ImmutableMap
+                .of("kafka_consumer_dimension_name_0______",
+                        "kafka_consumer_dimension_value_0______"), ImmutableMap
+                .of("kafka_consumer_dimension_name_0______",
+                        "kafka_consumer_dimension_value_0_______0"))));
 
     }
 
@@ -47,20 +72,21 @@ public class DataGeneratorTest {
     public void testMakingDimensionCombination_2() {
         DataGenerator dataGenerator = new DataGenerator(10, 1, 64,
                 6, 6);
-        Map<String, String> out = dataGenerator.generateDimensionCombination(3);
+        Set<Map<String, String>> out = dataGenerator.generateDimensionCombination(1, 7500).stream()
+                .collect(Collectors.toSet());
 
-        Assert.assertThat(out, is(ImmutableMap
-                .of("kafka_consumer_dimension_name_0____", "kafka_consumer_dimension_value_0____",
-                        "kafka_consumer_dimension_name_1____",
-                        "kafka_consumer_dimension_value_1____",
-                        "kafka_consumer_dimension_name_2____",
-                        "kafka_consumer_dimension_value_2____")));
+        Assert.assertThat(out, is(ImmutableSet.of(ImmutableMap
+                        .of("kafka_consumer_dimension_name_0____", "kafka_consumer_dimension_value_0____"),
+                ImmutableMap.of("kafka_consumer_dimension_name_0____",
+                        "kafka_consumer_dimension_value_0_____0"), ImmutableMap
+                        .of("kafka_consumer_dimension_name_0____",
+                                "kafka_consumer_dimension_value_0_____1"))));
 
     }
 
     @Test
     public void testMakingMockedDatapoints() {
-        int numMTSs = 1000;
+        int numMTSs = 5000;
         int numDimensions = 12;
         DataGenerator dataGenerator = new DataGenerator(numMTSs, numDimensions,
                 64, 32, 128);
