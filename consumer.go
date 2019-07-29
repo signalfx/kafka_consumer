@@ -18,12 +18,10 @@ type parser interface {
 type consumer struct {
 	consumer consumerGroup
 	config   *config
-	//done  chan struct{}
-	//wg    sync.WaitGroup
-	parser parser
-	dps    chan *datapoint.Datapoint
-	evts   chan *event.Event
-	id int
+	parser   parser
+	dps      chan *datapoint.Datapoint
+	evts     chan *event.Event
+	id       int
 
 	stats struct {
 		numMessages          int64
@@ -33,6 +31,7 @@ type consumer struct {
 		numParseErrs         int64
 		numTelegrafParseErrs int64
 	}
+	cancel context.CancelFunc
 }
 
 func (*consumer) Setup(sess sarama.ConsumerGroupSession) error {
@@ -83,7 +82,7 @@ func (c *consumer) Datapoints() []*datapoint.Datapoint {
 	return dps
 }
 
-func newConsumer(c *config, id int, topics []string, dps chan *datapoint.Datapoint, evts chan *event.Event) (*consumer, error) {
+func newConsumer(ctxt context.Context, c *config, id int, topics []string, dps chan *datapoint.Datapoint, evts chan *event.Event) (*consumer, error) {
 	log.Printf("I! Topics being monitored: %s", topics)
 
 	cc, err := c.getConsumerGroup(c.offset, hostname + "-" + strconv.Itoa(id))
@@ -100,18 +99,24 @@ func newConsumer(c *config, id int, topics []string, dps chan *datapoint.Datapoi
 		consumer: cc,
 		config:   c,
 		parser:   parser,
-		//done:         make(chan struct{}),
 		dps:  dps,
 		evts: evts,
 		id: id,
 	}
 
 	go func() {
-		if err := cc.Consume(context.Background(), topics, consumer); err != nil {
-			if err := cc.Close(); err != nil {
-				log.Printf("W! unable to close consumer on Consume error: %s", err)
+		for {
+			if err := cc.Consume(ctxt, topics, consumer); err != nil {
+				if err := cc.Close(); err != nil {
+					log.Printf("W! unable to close consumer on Consume error: %s", err)
+				}
+				log.Printf("E! Consume returned error: %s", err)
 			}
-			log.Printf("E! Consume returned error: %s", err)
+
+			// TODO: check that this was actually implemented and canceled
+			if ctxt.Err() != nil {
+				return
+			}
 		}
 	}()
 

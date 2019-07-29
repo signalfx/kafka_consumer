@@ -8,14 +8,12 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
-	"time"
 )
 
 func Test(t *testing.T) {
 	Convey("test kafka_consumer", t, func() {
 		config := getTestConfig(t)
 		So(config, ShouldNotBeNil)
-		config.refreshInterval = time.Second * 10
 		config.client.setTopics([]string{"blarg", "foo"})
 		c := make(chan struct{})
 		go func() {
@@ -41,7 +39,7 @@ func TestPostConsumer(t *testing.T) {
 		c := getTestConfig(t)
 		Convey("constructors", func() {
 			So(c.postConfig(), ShouldBeNil)
-			_, err := c.config.newClusterConstructor([]string{}, "", []string{}, nil)
+			_, err := c.config.newClusterConstructor([]string{}, "", nil)
 			So(err, ShouldNotBeNil)
 			_, err = c.config.newClientConstructor([]string{}, nil)
 			So(err, ShouldNotBeNil)

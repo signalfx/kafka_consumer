@@ -263,6 +263,9 @@ type kafkaConsumer struct {
 func start(config *config) (*kafkaConsumer, error) {
 	dps := make(chan *datapoint.Datapoint, config.channelSize*config.numDrainThreads)
 	evts := make(chan *event.Event, config.channelSize)
+	// TODO: use cancel and maybe use a waitgroup with for {} in newConsumer
+	// so that we don't close connection until all the Consume() calls have returned.
+	ctxt, _ := context.WithCancel(context.Background())
 
 	topics, err := config.getTopicList()
 	if err != nil {
@@ -271,7 +274,7 @@ func start(config *config) (*kafkaConsumer, error) {
 
 	var consumers []*consumer
 	for i := 0; i < int(config.numConsumers); i++ {
-		c, err := newConsumer(config, i, topics, dps, evts)
+		c, err := newConsumer(ctxt, config, i, topics, dps, evts)
 		if err != nil {
 			return nil, err
 		}

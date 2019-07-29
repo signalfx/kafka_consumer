@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"github.com/Shopify/sarama"
 	"github.com/influxdata/telegraf"
@@ -52,6 +53,11 @@ type testCluster struct {
 	errs chan error
 	err  error
 	mu   sync.Mutex
+}
+
+func (t *testCluster) Consume(ctx context.Context, topics []string, handler sarama.ConsumerGroupHandler) error {
+	//panic("implement me")
+	return nil
 }
 
 func (t *testCluster) MarkOffset(*sarama.ConsumerMessage, string) {
@@ -118,7 +124,6 @@ type testingConfig struct {
 }
 
 func getTestConfig(t *testing.T) *testingConfig {
-
 	if testConfig == nil {
 		os.Args = append(os.Args, "-KafkaBroker", "0.0.0.0:0", "-SfxToken", "TOKEN", "-SfxEndpoint", "localhost:-1")
 		tc, err := getConfig()
@@ -129,7 +134,6 @@ func getTestConfig(t *testing.T) *testingConfig {
 	}
 	testConfig.batchSize = 1
 	testConfig.metricInterval = time.Millisecond * 10
-	//testConfig.refreshInterval = time.Millisecond * 10
 	testConfig.debugServer = "0.0.0.0:0"
 	testConfig.client = &testSaramaClient{}
 	testConfig.tcluster = &testCluster{
@@ -156,19 +160,19 @@ func getTestConfig(t *testing.T) *testingConfig {
 func TestConsumer(t *testing.T) {
 	Convey("test consumer fail", t, func() {
 		config := getTestConfig(t)
-		config.topicPattern = "("
+		config.parser = "unknown"
 		dps := make(chan *datapoint.Datapoint, 10)
 		evts := make(chan *event.Event, 10)
-		_, err := newConsumer(&config.config, nil, dps, evts)
+		_, err := newConsumer(&config.config, 0, nil, dps, evts)
 		So(err, ShouldNotBeNil)
 		config.client.setError(nil)
-		config.topicPattern = ""
+		config.parser = telegrafParser
 	})
 	Convey("test consumer", t, func() {
 		config := getTestConfig(t)
 		dps := make(chan *datapoint.Datapoint, 10)
 		evts := make(chan *event.Event, 10)
-		c, err := newConsumer(&config.config, []string{"topic"}, dps, evts)
+		c, err := newConsumer(&config.config, 0, []string{"topic"}, dps, evts)
 		So(err, ShouldBeNil)
 		So(c, ShouldNotBeNil)
 		Convey("test err", func() {
