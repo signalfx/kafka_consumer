@@ -55,7 +55,7 @@ func TestForwarder(t *testing.T) {
 			}
 			for {
 				runtime.Gosched()
-				errs := atomic.LoadInt64(&f.stats.numDpErrors)
+				errs := atomic.LoadInt64(&f.stats.numDatapointSendFailures)
 				if errs > 0 {
 					break
 				}

@@ -32,11 +32,12 @@ type signalfxForwarder struct {
 	config *config
 	ctx    context.Context
 	stats  struct {
-		numE         int64
-		dPBatchSizes *sfxclient.RollingBucket
-		dPSendTime   *sfxclient.RollingBucket
-		numDpErrors  int64
-		numEErrors   int64
+		numE                     int64
+		dPBatchSizes             *sfxclient.RollingBucket
+		dPSendTime               *sfxclient.RollingBucket
+		numDatapointSendFailures int64
+		numEErrors               int64
+		numDatapointsFailed      int64
 	}
 }
 
@@ -120,13 +121,17 @@ func (s *signalfxForwarder) Datapoints() []*datapoint.Datapoint {
 	dims := map[string]string{"path": "kafka_consumer", "obj": "forwarder"}
 	dps = append(dps, []*datapoint.Datapoint{
 		sfxclient.CumulativeP("total_events", dims, &s.stats.numE),
-		sfxclient.CumulativeP("total_datapoint_errors", dims, &s.stats.numDpErrors),
-		sfxclient.Gauge("buffer_size", map[string]string{"path": "kafka_consumer", "obj": "forwarder", "chan": "main", "type": "datapoint"}, int64(len(s.dps))),
-		sfxclient.Gauge("buffer_size", map[string]string{"path": "kafka_consumer", "obj": "forwarder", "chan": "main", "type": "event"}, int64(len(s.evts))),
+		sfxclient.CumulativeP("total_datapoint_send_failures", dims, &s.stats.numDatapointSendFailures),
+		sfxclient.CumulativeP("total_datapoint_errors", dims, &s.stats.numDatapointsFailed),
+		sfxclient.Gauge("buffer_size", map[string]string{"path": "kafka_consumer", "obj": "forwarder", "chan": "main",
+			"type": "datapoint"}, int64(len(s.dps))),
+		sfxclient.Gauge("buffer_size", map[string]string{"path": "kafka_consumer", "obj": "forwarder", "chan": "main",
+			"type": "event"}, int64(len(s.evts))),
 	}...)
 	if s.config.useHashing {
 		for i, c := range s.chans {
-			dps = append(dps, sfxclient.Gauge("buffer_size", map[string]string{"path": "kafka_consumer", "obj": "forwarder", "chan": strconv.Itoa(i)}, int64(len(c))))
+			dps = append(dps, sfxclient.Gauge("buffer_size", map[string]string{"path": "kafka_consumer",
+				"obj": "forwarder", "chan": strconv.Itoa(i)}, int64(len(c))))
 		}
 	}
 	return dps
@@ -142,9 +147,11 @@ func (s *signalfxForwarder) sendToSignalFx(buf []*datapoint.Datapoint, i int) {
 	sort.Sort(byTimestamp(buf))
 	s.stats.dPBatchSizes.Add(float64(len(buf)))
 	now := time.Now().UnixNano()
+	//log.Printf("I! Sending %d datapoints", len(buf))
 	if err := s.sinks[i].AddDatapoints(s.ctx, buf); err != nil {
 		log.Printf("E! Error sending datapoints to signalfx! %s", err.Error())
-		atomic.AddInt64(&s.stats.numDpErrors, 1)
+		atomic.AddInt64(&s.stats.numDatapointSendFailures, 1)
+		atomic.AddInt64(&s.stats.numDatapointsFailed, int64(len(buf)))
 	}
 	s.stats.dPSendTime.Add(float64(time.Now().UnixNano() - now))
 }
@@ -183,8 +190,10 @@ func newSignalFxForwarder(
 		config: c,
 		ctx:    context.TODO(),
 	}
-	f.stats.dPBatchSizes = sfxclient.NewRollingBucket("batch_sizes", map[string]string{"path": "kafka_consumer", "obj": "datapoint"})
-	f.stats.dPSendTime = sfxclient.NewRollingBucket("request_duration", map[string]string{"path": "kafka_consumer", "obj": "datapoint"})
+	f.stats.dPBatchSizes = sfxclient.NewRollingBucket("batch_sizes", map[string]string{"path": "kafka_consumer",
+		"obj": "datapoint", "host": hostname})
+	f.stats.dPSendTime = sfxclient.NewRollingBucket("request_duration", map[string]string{"path": "kafka_consumer",
+		"obj": "datapoint", "host": hostname})
 	for i := range chans {
 		go f.drainChannel(i)
 	}
