@@ -49,7 +49,7 @@ func TestForwarder(t *testing.T) {
 		})
 		Convey("stuff being sent", func() {
 			dps := f.Datapoints()
-			So(len(dps), ShouldEqual, 20)
+			So(len(dps), ShouldEqual, 21)
 			for _, d := range dps {
 				f.dps <- d
 			}

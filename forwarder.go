@@ -147,7 +147,6 @@ func (s *signalfxForwarder) sendToSignalFx(buf []*datapoint.Datapoint, i int) {
 	sort.Sort(byTimestamp(buf))
 	s.stats.dPBatchSizes.Add(float64(len(buf)))
 	now := time.Now().UnixNano()
-	//log.Printf("I! Sending %d datapoints", len(buf))
 	if err := s.sinks[i].AddDatapoints(s.ctx, buf); err != nil {
 		log.Printf("E! Error sending datapoints to signalfx! %s", err.Error())
 		atomic.AddInt64(&s.stats.numDatapointSendFailures, 1)

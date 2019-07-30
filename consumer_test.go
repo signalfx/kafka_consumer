@@ -49,18 +49,78 @@ func (t *testSaramaClient) Topics() ([]string, error) {
 }
 
 type testCluster struct {
+	msgs     chan *sarama.ConsumerMessage
+	errs     chan error
+	err      error
+	mu       sync.Mutex
+	consumer *consumer
+}
+
+type saramaSession struct {
+}
+
+func (s saramaSession) Claims() map[string][]int32 {
+	panic("not implemented")
+}
+
+func (s saramaSession) MemberID() string {
+	panic("not implemented")
+}
+
+func (s saramaSession) GenerationID() int32 {
+	panic("not implemented")
+}
+
+func (s saramaSession) MarkOffset(topic string, partition int32, offset int64, metadata string) {
+	panic("not implemented")
+}
+
+func (s saramaSession) ResetOffset(topic string, partition int32, offset int64, metadata string) {
+	panic("not implemented")
+}
+
+func (s saramaSession) MarkMessage(msg *sarama.ConsumerMessage, metadata string) {
+}
+
+func (s saramaSession) Context() context.Context {
+	panic("not implemented")
+}
+
+type saramaClaim struct {
 	msgs chan *sarama.ConsumerMessage
-	errs chan error
-	err  error
-	mu   sync.Mutex
+}
+
+func (s *saramaClaim) Topic() string {
+	panic("not implemented")
+}
+
+func (s *saramaClaim) Partition() int32 {
+	panic("not implemented")
+}
+
+func (s *saramaClaim) InitialOffset() int64 {
+	panic("not implemented")
+}
+
+func (s *saramaClaim) HighWaterMarkOffset() int64 {
+	panic("not implemented")
+}
+
+func (s *saramaClaim) Messages() <-chan *sarama.ConsumerMessage {
+	return s.msgs
 }
 
 func (t *testCluster) Consume(ctx context.Context, topics []string, handler sarama.ConsumerGroupHandler) error {
-	//panic("implement me")
-	return nil
-}
-
-func (t *testCluster) MarkOffset(*sarama.ConsumerMessage, string) {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			if err := t.consumer.ConsumeClaim(&saramaSession{}, &saramaClaim{msgs: testConfig.tcluster.msgs}); err != nil {
+				panic(err)
+			}
+		}
+	}
 }
 
 func (t *testCluster) setError(err error) {
@@ -71,10 +131,6 @@ func (t *testCluster) setError(err error) {
 
 func (t *testCluster) Close() error {
 	return t.err
-}
-
-func (t *testCluster) Messages() <-chan *sarama.ConsumerMessage {
-	return t.msgs
 }
 
 func (t *testCluster) Errors() <-chan error {
@@ -163,7 +219,7 @@ func TestConsumer(t *testing.T) {
 		config.parser = "unknown"
 		dps := make(chan *datapoint.Datapoint, 10)
 		evts := make(chan *event.Event, 10)
-		_, err := newConsumer(&config.config, 0, nil, dps, evts)
+		_, err := newConsumer(context.Background(), &config.config, 0, nil, dps, evts)
 		So(err, ShouldNotBeNil)
 		config.client.setError(nil)
 		config.parser = telegrafParser
@@ -172,7 +228,8 @@ func TestConsumer(t *testing.T) {
 		config := getTestConfig(t)
 		dps := make(chan *datapoint.Datapoint, 10)
 		evts := make(chan *event.Event, 10)
-		c, err := newConsumer(&config.config, 0, []string{"topic"}, dps, evts)
+		c, err := newConsumer(context.Background(), &config.config, 0, []string{"topic"}, dps, evts)
+		config.tcluster.consumer = c
 		So(err, ShouldBeNil)
 		So(c, ShouldNotBeNil)
 		Convey("test err", func() {
@@ -206,6 +263,6 @@ func TestConsumer(t *testing.T) {
 
 func getMessage() *sarama.ConsumerMessage {
 	return &sarama.ConsumerMessage{
-		Value: []byte{109, 101, 116, 114, 105, 99, 66, 44, 104, 111, 115, 116, 61, 109, 121, 104, 111, 115, 116, 52, 55, 57, 57, 44, 101, 110, 118, 61, 116, 101, 115, 116, 32, 118, 97, 108, 49, 61, 56, 48, 57, 48, 44, 118, 97, 108, 50, 61, 56, 48, 56, 54, 44, 118, 97, 108, 51, 61, 51, 50, 51, 49, 55, 44, 118, 97, 108, 52, 61, 51, 48, 55, 55, 53, 44, 118, 97, 108, 53, 61, 49, 57, 56, 49, 55, 32, 49, 53, 50, 51, 50, 57, 55, 49, 50, 55, 56, 54, 51, 49, 51, 53, 50, 49, 56},
+		Value: []byte("metricB,host=myhost4799,env=test val1=8090,val2=8086,val3=32317,val4=30775,val5=19817 1523297127863135218"),
 	}
 }

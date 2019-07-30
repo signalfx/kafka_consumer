@@ -25,7 +25,7 @@ func Test(t *testing.T) {
 		}()
 		main()
 		<-c
-		So(len(mainInstance.Datapoints()), ShouldEqual, 24)
+		So(len(mainInstance.Datapoints()), ShouldEqual, 25)
 		logIfErr("Print %s", errors.New("blarg"))
 		config.offset = "oldest"
 		So(config.getOffset(), ShouldEqual, sarama.OffsetOldest)
