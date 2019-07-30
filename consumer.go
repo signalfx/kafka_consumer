@@ -62,12 +62,13 @@ func (c *consumer) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.C
 }
 
 func (c *consumer) close() error {
+	log.Printf("I! Waiting for consumer to stop")
+
 	if err := c.consumer.Close(); err != nil {
 		log.Printf("E! Error closing consumer: %s", err.Error())
 		return err
 	}
 
-	log.Printf("I! Waiting for consumer to stop")
 	return nil
 }
 
@@ -113,7 +114,6 @@ func newConsumer(ctxt context.Context, c *config, id int, topics []string, dps c
 				log.Printf("E! Consume returned error: %s", err)
 			}
 
-			// TODO: check that this was actually implemented and canceled
 			if ctxt.Err() != nil {
 				return
 			}

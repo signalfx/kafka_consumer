@@ -258,14 +258,20 @@ type kafkaConsumer struct {
 	debugServerListener net.Listener
 	sigs                chan os.Signal
 	internalMetrics     *sfxclient.HTTPSink
+	cancel              context.CancelFunc
 }
 
 func start(config *config) (*kafkaConsumer, error) {
 	dps := make(chan *datapoint.Datapoint, config.channelSize*config.numDrainThreads)
 	evts := make(chan *event.Event, config.channelSize)
-	// TODO: use cancel and maybe use a waitgroup with for {} in newConsumer
-	// so that we don't close connection until all the Consume() calls have returned.
-	ctxt, _ := context.WithCancel(context.Background())
+	ctxt, cancel := context.WithCancel(context.Background())
+
+	defer func() {
+		// Cancel on error (non-nil).
+		if cancel != nil {
+			cancel()
+		}
+	}()
 
 	topics, err := config.getTopicList()
 	if err != nil {
@@ -276,9 +282,11 @@ func start(config *config) (*kafkaConsumer, error) {
 	for i := 0; i < int(config.numConsumers); i++ {
 		c, err := newConsumer(ctxt, config, i, topics, dps, evts)
 		if err != nil {
+			for _, c := range consumers {
+				c.close()
+			}
 			return nil, err
 		}
-		// TODO: stop previous consumers if fail
 		consumers = append(consumers, c)
 	}
 
@@ -296,6 +304,7 @@ func start(config *config) (*kafkaConsumer, error) {
 		done:            done,
 		sigs:            make(chan os.Signal, 1),
 		internalMetrics: createInternalMetrics(config),
+		cancel:          cancel,
 	}
 	if config.debugServer != "" {
 		listener, err := net.Listen("tcp", config.debugServer)
@@ -316,6 +325,8 @@ func start(config *config) (*kafkaConsumer, error) {
 	if config.sendMetrics {
 		go k.metrics(config.metricInterval, dps)
 	}
+	// Mark as nil so it doesn't get canceled in the defer.
+	cancel = nil
 	return k, nil
 }
 
@@ -360,10 +371,14 @@ func (k *kafkaConsumer) wait() {
 	signal.Notify(k.sigs, syscall.SIGINT)
 	go func() {
 		sig := <-k.sigs
-		log.Printf("I! Caught the %s signal, draining consumer", sig)
+		log.Printf("I! Caught the %s signal, cancelling consumers context", sig)
+		k.cancel()
 
-		for _, c := range k.consumers {
-			c.close()
+		log.Printf("I! Draining consumers")
+		for i, c := range k.consumers {
+			if err := c.close(); err != nil {
+				log.Printf("E! Failed closing consumer %d: %s", i, err)
+			}
 		}
 		log.Printf("I! Done draining consumer, now draining forwarder")
 		k.writer.close()
