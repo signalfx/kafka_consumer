@@ -1,181 +1,133 @@
 package main
 
 import (
-	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/plugins/parsers"
+	"context"
+	"github.com/Shopify/sarama"
 	"github.com/signalfx/golib/datapoint"
 	"github.com/signalfx/golib/event"
 	"github.com/signalfx/golib/sfxclient"
-	"github.com/signalfx/telegraf/plugins/outputs/signalfx"
 	"log"
-	"reflect"
-	"regexp"
-	"sync"
+	"strconv"
 	"sync/atomic"
-	"time"
 )
 
-type telegrafParser interface {
-	GetObjects(metrics []telegraf.Metric, dps chan *datapoint.Datapoint, evets chan *event.Event)
+type parser interface {
+	parse(msg []byte, dps chan *datapoint.Datapoint, events chan *event.Event) (int, error)
 }
 
 type consumer struct {
-	consumer clusterConsumer
-	topics   []string
+	consumer consumerGroup
 	config   *config
-	parser   parsers.Parser
-	regexed  *regexp.Regexp
+	parser   parser
+	dps      chan *datapoint.Datapoint
+	evts     chan *event.Event
+	id       int
 
-	replacements chan struct{}
-
-	done  chan struct{}
-	wg    sync.WaitGroup
-	tsfx  telegrafParser
-	dps   chan *datapoint.Datapoint
-	evts  chan *event.Event
 	stats struct {
 		numMessages          int64
-		numSentToParse       int64
+		numMetricsParsed     int64
 		numErrs              int64
 		numReplacements      int64
 		numParseErrs         int64
 		numTelegrafParseErrs int64
 	}
+	cancel context.CancelFunc
 }
 
-func (c *consumer) refresh() {
-	for {
-		select {
-		case <-c.done:
-			c.wg.Done()
-			return
-		case <-time.After(c.config.refreshInterval):
-			c.replacements <- struct{}{}
+func (*consumer) Setup(sess sarama.ConsumerGroupSession) error {
+	log.Printf("I! Starting consumer for claims %v", sess.Claims())
+	return nil
+}
+
+func (*consumer) Cleanup(sess sarama.ConsumerGroupSession) error {
+	log.Printf("I! Cleaning up consumer for claims %v", sess.Claims())
+	return nil
+}
+
+func (c *consumer) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+	for msg := range claim.Messages() {
+		atomic.AddInt64(&c.stats.numMessages, 1)
+
+		if numMetrics, err := c.parser.parse(msg.Value, c.dps, c.evts); err == nil {
+			atomic.AddInt64(&c.stats.numMetricsParsed, int64(numMetrics))
+		} else {
+			atomic.AddInt64(&c.stats.numParseErrs, 1)
+			log.Printf("E! Message Parse Error\nmessage: %v\nerror: %s", msg, err)
 		}
+
+		sess.MarkMessage(msg, "")
 	}
+
+	return nil
 }
 
-func (c *consumer) consume() {
-	for {
-		select {
-		case <-c.done:
-			c.closeConsumer()
-			log.Println("I! Consumer drained")
-			c.wg.Done()
-			return
-		case <-c.replacements:
-			logIfErr("E! Error fetching new topic list! %s", c.refreshInternal())
-		case msg := <-c.consumer.Messages():
-			atomic.AddInt64(&c.stats.numMessages, 1)
-			metrics, err := c.parser.Parse(msg.Value)
-			if err == nil {
-				atomic.AddInt64(&c.stats.numSentToParse, 1)
-				c.tsfx.GetObjects(metrics, c.dps, c.evts)
-			} else {
-				log.Printf("E! Message Parse Error\nmessage: %s\nerror: %s", msg.Value, err)
-				atomic.AddInt64(&c.stats.numParseErrs, 1)
-			}
-			c.consumer.MarkOffset(msg, "")
-		case err := <-c.consumer.Errors():
-			atomic.AddInt64(&c.stats.numErrs, 1)
-			if err != nil {
-				log.Printf("E! consumer Error: %s\n", err.Error())
-			}
-		}
-	}
-}
+func (c *consumer) close() error {
+	log.Printf("I! Waiting for consumer to stop")
 
-func (c *consumer) closeConsumer() error {
 	if err := c.consumer.Close(); err != nil {
 		log.Printf("E! Error closing consumer: %s", err.Error())
 		return err
 	}
+
 	return nil
-}
-
-func (c *consumer) refreshInternal() (err error) {
-	valid, err := c.config.getTopicList(c.regexed)
-	log.Printf("D! refreshing, got %v, %s", valid, err)
-	if err == nil {
-		answer := reflect.DeepEqual(valid, c.topics)
-		if !answer {
-			log.Printf("I! New topics detected, old %v new %v", c.topics, valid)
-			c.replaceConsumer(valid)
-		}
-	}
-	return err
-}
-
-func (c *consumer) replaceConsumer(valid []string) error {
-	log.Printf("D! inside replaceConsumer valid")
-	defer log.Printf("D! exiting replaceConsumer")
-
-	log.Printf("D! getting new consumer: %v", valid)
-	newConsumer, err := c.config.getClusterConsumer(valid, "oldest") // must do oldest here so we don't miss anything
-	if err != nil {
-		log.Printf("E! Error creating new consumer! %s", err.Error())
-		return err
-	}
-
-	log.Printf("D! closing old consumer")
-	c.closeConsumer()
-	log.Printf("D! done closing old consumer")
-
-	c.consumer = newConsumer
-	c.topics = valid
-	atomic.AddInt64(&c.stats.numReplacements, 1)
-	return nil
-}
-
-func (c *consumer) close() {
-	close(c.done)
-	c.wg.Wait()
-	close(c.replacements)
 }
 
 func (c *consumer) Datapoints() []*datapoint.Datapoint {
-	dims := map[string]string{"path": "kafka_consumer", "obj": "consumer"}
+	dims := map[string]string{"path": "kafka_consumer", "obj": "consumer", "consumer_id": strconv.Itoa(c.id)}
 	dps := []*datapoint.Datapoint{
 		sfxclient.CumulativeP("total_messages_received", dims, &c.stats.numMessages),
-		sfxclient.CumulativeP("total_messages_sent_to_parse", dims, &c.stats.numSentToParse),
+		sfxclient.CumulativeP("total_messages_parsed", dims, &c.stats.numMetricsParsed),
 		sfxclient.CumulativeP("total_errors_received", dims, &c.stats.numErrs),
+		sfxclient.CumulativeP("total_parse_errors_received", dims, &c.stats.numParseErrs),
 	}
 	return dps
 }
 
-func newConsumer(c *config, dps chan *datapoint.Datapoint, evts chan *event.Event) (*consumer, error) {
-	regexed, err := regexp.Compile(c.topicPattern)
-	if err == nil {
-		var valid []string
-		valid, err = c.getTopicList(regexed)
-		if err == nil {
-			var cc clusterConsumer
-			cc, err = c.getClusterConsumer(valid, c.offset)
-			if err == nil {
-				var parser parsers.Parser
-				parser, err = c.parserConstructor()
-				if err == nil {
-					consumer := &consumer{
-						consumer:     cc,
-						config:       c,
-						topics:       valid,
-						parser:       parser,
-						done:         make(chan struct{}),
-						regexed:      regexed,
-						tsfx:         signalfx.NewSignalFx(),
-						dps:          dps,
-						evts:         evts,
-						replacements: make(chan struct{}, 10),
-					}
+func newConsumer(ctxt context.Context, c *config, id int, topics []string, dps chan *datapoint.Datapoint, evts chan *event.Event) (*consumer, error) {
+	log.Printf("I! Topics being monitored: %s", topics)
 
-					go consumer.consume()
-					go consumer.refresh()
-					consumer.wg.Add(2)
+	cc, err := c.getConsumerGroup(c.offset, hostname + "-" + strconv.Itoa(id))
+	if err != nil {
+		return nil, err
+	}
 
-					return consumer, nil
+	parser, err := c.getParser()
+	if err != nil {
+		return nil, err
+	}
+
+	consumer := &consumer{
+		consumer: cc,
+		config:   c,
+		parser:   parser,
+		dps:  dps,
+		evts: evts,
+		id: id,
+	}
+
+	go func() {
+		for {
+			if err := cc.Consume(ctxt, topics, consumer); err != nil {
+				if err := cc.Close(); err != nil {
+					log.Printf("W! unable to close consumer on Consume error: %s", err)
 				}
+				log.Printf("E! Consume returned error: %s", err)
+			}
+
+			if ctxt.Err() != nil {
+				return
 			}
 		}
-	}
-	return nil, err
+	}()
+
+	go func() {
+		for err := range cc.Errors() {
+			atomic.AddInt64(&consumer.stats.numErrs, 1)
+			if err != nil {
+				log.Printf("E! consumer Error: %s", err.Error())
+			}
+		}
+	}()
+
+	return consumer, nil
 }

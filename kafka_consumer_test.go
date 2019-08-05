@@ -8,21 +8,16 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
-	"time"
 )
 
 func Test(t *testing.T) {
 	Convey("test kafka_consumer", t, func() {
 		config := getTestConfig(t)
 		So(config, ShouldNotBeNil)
-		config.refreshInterval = time.Second * 10
 		config.client.setTopics([]string{"blarg", "foo"})
 		c := make(chan struct{})
 		go func() {
 			for atomic.LoadInt64(&setup) == 0 {
-				runtime.Gosched()
-			}
-			for len(mainInstance.c.dps) == 0 {
 				runtime.Gosched()
 			}
 			mainInstance.sigs <- syscall.SIGTERM
@@ -30,7 +25,7 @@ func Test(t *testing.T) {
 		}()
 		main()
 		<-c
-		So(len(mainInstance.Datapoints()), ShouldEqual, 23)
+		So(len(mainInstance.Datapoints()), ShouldEqual, 25)
 		logIfErr("Print %s", errors.New("blarg"))
 		config.offset = "oldest"
 		So(config.getOffset(), ShouldEqual, sarama.OffsetOldest)
@@ -44,7 +39,7 @@ func TestPostConsumer(t *testing.T) {
 		c := getTestConfig(t)
 		Convey("constructors", func() {
 			So(c.postConfig(), ShouldBeNil)
-			_, err := c.config.newClusterConstructor([]string{}, "", []string{}, nil)
+			_, err := c.config.newClusterConstructor([]string{}, "", nil)
 			So(err, ShouldNotBeNil)
 			_, err = c.config.newClientConstructor([]string{}, nil)
 			So(err, ShouldNotBeNil)

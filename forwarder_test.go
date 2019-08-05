@@ -30,13 +30,13 @@ func TestForwarder(t *testing.T) {
 		c := getTestConfig(t)
 		c1 := *c
 		c1.useHashing = false
-		f := newSignalFxForwarder(&c1.config)
+		f := newSignalFxForwarder(&c1.config, make(chan *datapoint.Datapoint), make(chan *event.Event))
 		So(f.chans[0], ShouldBeNil)
 		f.close()
 	})
 	Convey("test forwarder", t, func() {
 		c := getTestConfig(t)
-		f := newSignalFxForwarder(&c.config)
+		f := newSignalFxForwarder(&c.config, make(chan *datapoint.Datapoint), make(chan *event.Event))
 		Convey("test sorting", func() {
 			y := []*datapoint.Datapoint{
 				dptest.DP(),
@@ -49,13 +49,13 @@ func TestForwarder(t *testing.T) {
 		})
 		Convey("stuff being sent", func() {
 			dps := f.Datapoints()
-			So(len(dps), ShouldEqual, 20)
+			So(len(dps), ShouldEqual, 21)
 			for _, d := range dps {
 				f.dps <- d
 			}
 			for {
 				runtime.Gosched()
-				errs := atomic.LoadInt64(&f.stats.numDpErrors)
+				errs := atomic.LoadInt64(&f.stats.numDatapointSendFailures)
 				if errs > 0 {
 					break
 				}
