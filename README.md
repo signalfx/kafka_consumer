@@ -1,5 +1,5 @@
 
-## Kafka consumer of telegraf data to SignalFx
+## Kafka consumer of Telegraf or JSON data to SignalFx
 
 ```
 Usage of ./kafka_consumer:
