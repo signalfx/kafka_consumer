@@ -1,15 +1,16 @@
 package main
 
 import (
-	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/signalfx/golib/datapoint"
 	"github.com/signalfx/golib/event"
 )
 
-func Test_jsonParser_parse(t *testing.T) {
+func TestJSONParse(t *testing.T) {
 	type args struct {
 		msg    []byte
 		dps    chan *datapoint.Datapoint
@@ -25,16 +26,15 @@ func Test_jsonParser_parse(t *testing.T) {
 	}{
 		{"nil", &json{}, args{[]byte(""), make(chan *datapoint.Datapoint), make(chan *event.Event)}, 0, nil, true},
 		{"empty", &json{}, args{[]byte("{}"), make(chan *datapoint.Datapoint, 1), make(chan *event.Event, 1)},
-			1, datapoint.New("", nil, datapoint.NewFloatValue(0), datapoint.Gauge, time.Unix(0, 0)), false},
+			0, nil, false},
 		{"has values", &json{}, args{
-			[]byte(`{"m": "metric", "t": 1563892873000, "v": 12.2, "dims": {"dim1": "3", "dim2": "4"}}`),
+			[]byte(`{"gauge":[{"metric":"fci-api-rest-status","value":1,"dimensions":{"http_status_code":"429"},"timestamp":1572290806420}]}`),
 			make(chan *datapoint.Datapoint, 1),
 			make(chan *event.Event, 1)},
 			1,
-			datapoint.New("metric", map[string]string{
-				"dim1": "3",
-				"dim2": "4",
-			}, datapoint.NewFloatValue(12.2), datapoint.Gauge, time.Unix(1563892873, 0)),
+			datapoint.New("fci-api-rest-status", map[string]string{
+				"http_status_code": "429",
+			}, datapoint.NewIntValue(1), datapoint.Gauge, time.Unix(0, 1572290806420*int64(time.Millisecond))),
 			false,
 		},
 	}
@@ -42,11 +42,11 @@ func Test_jsonParser_parse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := tt.j.parse(tt.args.msg, tt.args.dps, tt.args.events)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("jsonParser.parse() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("json.parse() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if got != tt.want {
-				t.Errorf("jsonParser.parse() = %v, want %v", got, tt.want)
+				t.Errorf("json.parse() = %v, want %v", got, tt.want)
 			}
 			if tt.wantDp != nil {
 				gotDp := <-tt.args.dps
